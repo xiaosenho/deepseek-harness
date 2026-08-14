@@ -726,6 +726,19 @@
         "react-dom"
       ]
     },
+    "apps/electron": {
+      "entry": [
+        "src/main.ts",
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/cordis-plugin-group"
+      ]
+    },
     "apps/cli": {
       "entry": [
         "tests/**/*.spec.ts",

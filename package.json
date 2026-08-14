@@ -45,7 +45,7 @@
     "test:web:perf": "npm run build && npm run test:web:perf:built",
     "test:web:perf:built": "DSH_SNAPSHOT=replay vitest run --config vitest.web.perf.config.ts",
     "test:web:stress": "npm run build && vitest run --config vitest.web-stress.config.ts",
-    "test:gui": "vitest run packages/client packages/host",
+    "test:gui": "vitest run packages/client packages/host apps/electron",
     "check:all": "tsx scripts/run-gates.ts check-all",
     "check:ci": "tsx scripts/run-gates.ts ci-primary",
     "check:ci:linux-primary": "tsx scripts/run-gates.ts ci-linux-primary",
@@ -139,6 +139,11 @@
     "demo:acp": "node --import tsx packages/examples/acp-demo/src/bin.ts --config examples/acp-agent/cordis.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
+    "dev:electron": "npm run build && pnpm --filter @deepseek-ai/dsh-electron run dev",
+    "pack:electron": "npm run build && pnpm --filter @deepseek-ai/dsh-electron run pack",
+    "dist:electron": "npm run build && pnpm --filter @deepseek-ai/dsh-electron run dist",
+    "dist:electron:mac": "npm run build && pnpm --filter @deepseek-ai/dsh-electron run dist:mac",
+    "dist:electron:win": "npm run build && pnpm --filter @deepseek-ai/dsh-electron run dist:win",
     "postinstall": "node scripts/install-lefthook.mjs"
   },
   "devDependencies": {

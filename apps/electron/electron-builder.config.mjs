@@ -1,0 +1,91 @@
+/** Electron Builder assembly for the complete dsh workspace runtime. */
+
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const appDir = dirname(fileURLToPath(import.meta.url))
+const workspaceRoot = resolve(appDir, '..', '..')
+
+function childDirectories(parent) {
+  return readdirSync(parent, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => join(parent, entry.name))
+}
+
+function workspacePackageDirectories() {
+  const apps = childDirectories(join(workspaceRoot, 'apps'))
+  const packages = childDirectories(join(workspaceRoot, 'packages')).flatMap(childDirectories)
+  const vendor = childDirectories(join(workspaceRoot, 'vendor'))
+  const native = childDirectories(join(workspaceRoot, 'native')).flatMap((dir) => {
+    const nested = join(dir, 'packages')
+    return [dir, ...existsSync(nested) ? childDirectories(nested) : []]
+  })
+  return [...apps, ...packages, ...vendor, ...native].filter(dir => existsSync(join(dir, 'package.json')))
+}
+
+const workspacePackages = new Map(workspacePackageDirectories().map((dir) => {
+  const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+  return [manifest.name, { dir, manifest }]
+}))
+
+function runtimeWorkspacePackages() {
+  const selected = new Set()
+  const pending = ['@deepseek-ai/dsh', '@deepseek-ai/cordis-plugin-group']
+  while (pending.length > 0) {
+    const name = pending.pop()
+    if (name === undefined || selected.has(name)) continue
+    const record = workspacePackages.get(name)
+    if (record === undefined) throw new Error(`Electron runtime workspace package not found: ${name}`)
+    selected.add(name)
+    const dependencies = { ...record.manifest.dependencies, ...record.manifest.peerDependencies }
+    for (const [dependency, version] of Object.entries(dependencies)) {
+      if (record.manifest.peerDependenciesMeta?.[dependency]?.optional === true) continue
+      if (typeof version === 'string' && version.startsWith('workspace:')) pending.push(dependency)
+    }
+  }
+  return [...selected].sort().map(name => workspacePackages.get(name))
+}
+
+function packageFilter(files = ['lib']) {
+  return ['package.json', ...files.flatMap(file => file.startsWith('!') ? [file] : [file, `${file}/**/*`])]
+}
+
+const workspaceRuntime = runtimeWorkspacePackages().map(({ dir, manifest }) => ({
+  from: relative(appDir, dir),
+  to: `app/node_modules/${manifest.name}`,
+  filter: packageFilter(manifest.files),
+}))
+
+export default {
+  appId: 'ai.deepseek.harness',
+  artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',
+  asar: false,
+  npmRebuild: false,
+  directories: { output: '../../dist/electron' },
+  files: ['lib/*.js', 'resources/*.yml', 'package.json'],
+  extraResources: workspaceRuntime,
+  mac: {
+    category: 'public.app-category.developer-tools',
+    icon: 'build/icon.png',
+    target: [{ target: 'dmg', arch: ['arm64'] }],
+  },
+  dmg: {
+    title: 'DeepSeek Harness ${version}',
+  },
+  win: {
+    icon: 'build/icon.png',
+    target: [{ target: 'nsis', arch: ['x64'] }],
+  },
+  nsis: {
+    oneClick: false,
+    allowToChangeInstallationDirectory: true,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    shortcutName: 'DeepSeek Harness',
+  },
+  linux: {
+    category: 'Development',
+    target: ['AppImage', 'deb'],
+  },
+}
