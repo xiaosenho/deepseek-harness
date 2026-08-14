@@ -598,6 +598,38 @@ describe('writeText', () => {
   })
 })
 
+describe('writeBytes', () => {
+  it('atomically creates binary content without text decoding', async () => {
+    const target = await fs.resolve('resume.docx')
+    const content = Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff])
+
+    const outcome = await fs.writeBytes(target, content, { kind: 'createIfAbsent' })
+
+    expect(outcome.operation).toBe('create')
+    expect(outcome.bytes).toBe(content.byteLength)
+    expect(await readFile(join(dir, 'resume.docx'))).toEqual(Buffer.from(content))
+  })
+
+  it('preserves guarded-write semantics for existing binary files', async () => {
+    await writeFile(join(dir, 'resume.docx'), Uint8Array.from([1, 2, 3]))
+    const target = await fs.resolve('resume.docx')
+    await expect(fs.writeBytes(target, Uint8Array.from([4]), { kind: 'createIfAbsent' }))
+      .rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
+
+    const version = await versionOf(target)
+    const outcome = await fs.writeBytes(target, Uint8Array.from([4, 5]), { kind: 'replaceIfVersion', version })
+    expect(outcome).toMatchObject({ operation: 'update', bytes: 2 })
+    expect(await readFile(join(dir, 'resume.docx'))).toEqual(Buffer.from([4, 5]))
+  })
+
+  it('honors cancellation before publication', async () => {
+    const target = await fs.resolve('resume.docx')
+    await expect(fs.writeBytes(target, Uint8Array.from([1]), undefined, AbortSignal.abort()))
+      .rejects.toMatchObject({ code: 'FS_ABORTED' })
+    expect(await fs.stat(target)).toBeUndefined()
+  })
+})
+
 describe('editText', () => {
   it('applies a literal edit at the matching version', async () => {
     await writeFile(join(dir, 'a.txt'), 'hello world')

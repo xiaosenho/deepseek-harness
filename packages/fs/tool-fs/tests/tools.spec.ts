@@ -13,6 +13,7 @@ import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolResult } from '@deepseek-ai/dsh-tools'
 import { FileSystem, FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
 import type {
+  FsBinaryWriteOutcome,
   FsDirEntry,
   FsEditOutcome,
   FsEditRequest,
@@ -87,6 +88,11 @@ class FakeFs extends FileSystem {
     const before = this.files.get(target.targetKey) ?? null
     this.files.set(target.targetKey, content)
     return { operation: before !== null ? 'update' : 'create', version: FsVersion('v2'), before, after: content }
+  }
+  override async writeBytes(target: FsTarget, content: Uint8Array): Promise<FsBinaryWriteOutcome> {
+    const operation = this.files.has(target.targetKey) ? 'update' : 'create'
+    this.files.set(target.targetKey, new TextDecoder().decode(content))
+    return { operation, version: FsVersion('v2'), bytes: content.byteLength }
   }
   override async editText(target: FsTarget, edit: FsEditRequest, expected?: { version: FsVersion }): Promise<FsEditOutcome> {
     this.throwIfArmed()

@@ -12,6 +12,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type {
   FsDirEntry,
+  FsBinaryWriteOutcome,
   FsEditOutcome,
   FsEditRequest,
   FsInfo,
@@ -29,6 +30,7 @@ export {
   FsVersion,
 } from './types.ts'
 export type {
+  FsBinaryWriteOutcome,
   FsEditOutcome,
   FsEditRequest,
   FsDirEntry,
@@ -48,7 +50,8 @@ declare module '@deepseek-ai/cordis' {
 
   interface Events {
     /**
-     * Single-slot decision for the next {@link FileSystem.writeText}. Calling
+     * Single-slot decision for the next {@link FileSystem.writeText} or
+     * {@link FileSystem.writeBytes}. Calling
      * `next()` yields the bare provider's unconditional write; the first listener
      * that returns an intent owns the decision rather than composing with peers.
      * @param target - the resolved target about to be written.
@@ -226,6 +229,26 @@ export abstract class FileSystem extends Service {
     signal?: AbortSignal,
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsWriteOutcome>
+
+  /**
+   * Atomically create or replace a binary file. `expected` has the same
+   * create/replace semantics as {@link writeText}; the result reports the
+   * complete byte length rather than a textual diff basis.
+   * @param target - the resolved target to write.
+   * @param content - the complete bytes to publish.
+   * @param expected - the write intent guarding the write; omit for unconditional.
+   * @param signal - aborts before atomic publication takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root enforced by a
+   *   sandboxing provider; omit to use the provider default.
+   * @returns the operation, new version, and published byte length.
+   */
+  abstract writeBytes(
+    target: FsTarget,
+    content: Uint8Array,
+    expected?: FsWriteIntent,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsBinaryWriteOutcome>
 
   /**
    * Atomically edit literal text. When supplied, the version guard is checked

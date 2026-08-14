@@ -1,6 +1,6 @@
 /**
  * Tests for the sandbox-enforcing filesystem backend: the per-call policy fence
- * on write/edit (read-only denies, workspace-write contains, danger-full-access
+ * on text/binary write and edit (read-only denies, workspace-write contains, danger-full-access
  * passes through), reads always passing through, the capability fact, and the
  * containment matrix — `..` traversal, absolute paths outside, and symlink
  * escapes (a symlinked directory inside the workspace pointing out, and a new
@@ -72,6 +72,13 @@ describe('read-only', () => {
     expect(existsSync(path)).toBe(false)
   })
 
+  it('denies binary write, leaving no file on disk', async () => {
+    const path = join(workspace, 'denied.docx')
+    await expect(fs.writeBytes(await target(path), Uint8Array.from([0x50, 0x4b])))
+      .rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(existsSync(path)).toBe(false)
+  })
+
   it('denies edit of an existing file (the content is unchanged)', async () => {
     const path = join(workspace, 'file.txt')
     await writeFile(path, 'original')
@@ -95,6 +102,14 @@ describe('workspace-write containment', () => {
     const outcome = await fs.writeText(await target(path), 'inside')
     expect(outcome.operation).toBe('create')
     expect(await readFile(path, 'utf8')).toBe('inside')
+  })
+
+  it('a binary write under the workspace lands without decoding', async () => {
+    const path = join(workspace, 'resume.docx')
+    const bytes = Uint8Array.from([0x50, 0x4b, 0x00, 0xff])
+    const outcome = await fs.writeBytes(await target(path), bytes)
+    expect(outcome).toMatchObject({ operation: 'create', bytes: 4 })
+    expect(await readFile(path)).toEqual(Buffer.from(bytes))
   })
 
   it('a write to the platform temp area lands (parity with the bash runner grant)', async () => {

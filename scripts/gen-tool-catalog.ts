@@ -46,6 +46,7 @@ import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
 import CordisHostRunner from '@deepseek-ai/dsh-cordis-host-runner'
 import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+import * as ToolDocx from '@deepseek-ai/dsh-tool-docx'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
@@ -309,6 +310,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. `read_image` is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-docx',
+    dir: 'tool-docx',
+    source: 'packages/fs/tool-docx/src/index.ts',
+    requires: ['ctx.tools', 'ctx.fs', 'ctx.systemPrompt', 'ctx.sandboxPolicy under a confining filesystem provider'],
+    writes: ['tool/call', 'fs/write-intent', 'fs/observed after successful binary publication', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(LocalFileSystem)
+      await ctx.plugin(ToolDocx)
+    },
+    note:
+      'Structured resume generator that publishes a bounded OOXML archive through the filesystem seam; it does not parse existing DOCX or PDF files.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-fs-search',
