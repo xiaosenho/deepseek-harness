@@ -276,7 +276,7 @@ describe('SettingsScopeController', () => {
     expect(published).toEqual([undefined])
   })
 
-  it('keeps a remote browser in memory mode without Host calls', async () => {
+  it('keeps memory mode process-local without Host calls', async () => {
     const describeCall = vi.fn()
     const mutate = vi.fn()
     const scope = new SettingsScopeController<UiTestSettings>(
@@ -375,7 +375,7 @@ describe('SettingsScopeBinder.bind', () => {
     const ctx = new Context()
     ctx.provide('connection', {
       api: { settings: { describe: describeCall } },
-      isLoopback: true,
+      hasHostAuthority: true,
     } as never)
     let scope!: SettingsScope<UiTestSettings>
     new TestRemote(ctx)
@@ -402,12 +402,12 @@ describe('SettingsScopeBinder.bind', () => {
     expect(describeCall).toHaveBeenCalledTimes(3)
   })
 
-  it('binds a remote browser in memory mode without starting a settings read', async () => {
+  it('binds a client without Host authority in memory mode without starting a settings read', async () => {
     const describeCall = vi.fn()
     const ctx = new Context()
     ctx.provide('connection', {
       api: { settings: { describe: describeCall } },
-      isLoopback: false,
+      hasHostAuthority: false,
     } as never)
     let scope!: SettingsScope<UiTestSettings>
     new TestRemote(ctx)

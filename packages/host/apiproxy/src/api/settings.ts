@@ -4,6 +4,7 @@
  * seam (`describe({ redactSecrets: true })` semantics): `role('secret')`
  * fields never ride a response in any layer, and the `secrets` slot list is
  * how a form learns a write-only field exists and whether it is configured.
+ * Browser carriers admit every method in this domain only with Host authority.
  */
 
 import type { RpcRequest, RpcResponse } from './rpc.ts'
@@ -55,8 +56,8 @@ export interface SettingsApi {
    * Describe every registered namespace: redacted layered values plus the
    * serialized schema a client renders its form from. `hasDocument` reports
    * whether a file-backed provider owns a local document without exposing its
-   * Host path. This method is loopback-only; `writable: false` (read-only
-   * provider) tells the client to disable every write control.
+   * Host path. `writable: false` (read-only provider) tells the client to
+   * disable every write control.
    */
   describe(request: RpcRequest<{}>): Promise<RpcResponse<{
     writable: boolean

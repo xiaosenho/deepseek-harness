@@ -50,15 +50,19 @@ const FIRST_PARTY = new Set([
 export const CLAUDE_AGENT_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
 const CLAUDE_PLATFORM_PACKAGE_PREFIX = `${CLAUDE_AGENT_SDK_PACKAGE}-`
 const CLAUDE_PLATFORM_DECLARED_LICENSE = 'SEE LICENSE IN LICENSE.md'
+/** Windows native image runtime covered by a separate distribution decision. */
+export const SHARP_WINDOWS_RUNTIME_PACKAGE = '@img/sharp-win32-x64'
+/** Exact license declaration accepted for the Windows native image runtime. */
+export const SHARP_WINDOWS_DECLARED_LICENSE = 'Apache-2.0 AND LGPL-3.0-or-later'
 
 /**
  * Whether a non-permissive runtime declaration has an identity-scoped owner
  * authorization. This does not reclassify its terms as permissive.
  * @param name - exact npm package identity.
- * @returns true only for the official Claude Agent SDK package.
+ * @returns true only for an exact package identity with a recorded decision.
  */
 export function isOwnerAuthorizedRuntime(name: string): boolean {
-  return name === CLAUDE_AGENT_SDK_PACKAGE
+  return name === CLAUDE_AGENT_SDK_PACKAGE || name === SHARP_WINDOWS_RUNTIME_PACKAGE
 }
 
 /**
@@ -75,6 +79,7 @@ const OVERRIDES: Record<string, { license?: string; repo?: string }> = {
   '@modelcontextprotocol/server-filesystem': { license: 'MIT / Apache-2.0', repo: 'https://github.com/modelcontextprotocol/servers' },
   // No repository field in the published manifest.
   'node-addon-require-builtin': { repo: 'https://www.npmjs.com/package/node-addon-require-builtin' },
+  'node-addon-require-builtin-win32-x64-msvc': { repo: 'https://www.npmjs.com/package/node-addon-require-builtin' },
 }
 
 /**
@@ -194,6 +199,38 @@ export interface ClaudeDistribution {
   readonly payloads: ClaudePlatformPayload[]
 }
 
+/** Installed Sharp Windows payload facts required by its legal notice. */
+export interface SharpWindowsDistribution {
+  readonly packageVersion: string
+  readonly libvipsVersion: string
+}
+
+/**
+ * Validate the exact Sharp Windows identity, license declaration, and libvips version.
+ * @param manifest - installed Sharp Windows package manifest.
+ * @param versions - installed platform payload's `versions.json` fields.
+ * @returns version facts rendered into the notices.
+ */
+export function sharpWindowsDistributionFromManifest(
+  manifest: VirtualManifest,
+  versions: Readonly<Record<string, unknown>>,
+): SharpWindowsDistribution {
+  if (manifest.name !== SHARP_WINDOWS_RUNTIME_PACKAGE) {
+    throw new Error(`gen-third-party-notices: expected ${SHARP_WINDOWS_RUNTIME_PACKAGE} manifest, got ${JSON.stringify(manifest.name)}.`)
+  }
+  if (manifest.license !== SHARP_WINDOWS_DECLARED_LICENSE) {
+    throw new Error(`gen-third-party-notices: ${SHARP_WINDOWS_RUNTIME_PACKAGE} license changed from ${SHARP_WINDOWS_DECLARED_LICENSE}; review the distribution terms.`)
+  }
+  if (manifest.version === undefined || manifest.version.length === 0) {
+    throw new Error(`gen-third-party-notices: ${SHARP_WINDOWS_RUNTIME_PACKAGE} has no version.`)
+  }
+  const libvipsVersion = versions.vips
+  if (typeof libvipsVersion !== 'string' || libvipsVersion.length === 0) {
+    throw new Error(`gen-third-party-notices: ${SHARP_WINDOWS_RUNTIME_PACKAGE} versions.json has no vips version.`)
+  }
+  return { packageVersion: manifest.version, libvipsVersion }
+}
+
 function requiredManifestString(
   value: string | undefined,
   field: string,
@@ -270,6 +307,27 @@ export function virtualManifest(virtual: string, name: string): VirtualManifest 
   return undefined
 }
 
+/** Resolve one installed package file from a direct link or pnpm virtual store. */
+function installedPackageFile(name: string, relativeFile: string): string | undefined {
+  const prefix = `${name.replace('/', '+')}@`
+  for (const store of ['node_modules', 'native/landlock-run/node_modules']) {
+    const direct = resolve(root, store, name, relativeFile)
+    if (existsSync(direct)) return direct
+    const virtual = resolve(root, store, '.pnpm')
+    if (!existsSync(virtual)) continue
+    const entries = readdirSync(virtual)
+    const candidates = [
+      ...entries.filter(dir => dir.startsWith(prefix)),
+      ...entries.filter(dir => !dir.startsWith(prefix)),
+    ]
+    for (const entry of candidates) {
+      const candidate = resolve(virtual, entry, 'node_modules', name, relativeFile)
+      if (existsSync(candidate)) return candidate
+    }
+  }
+  return undefined
+}
+
 /** Resolve one installed external package manifest from either pnpm store. */
 function installedManifest(name: string): VirtualManifest | undefined {
   let manifest: (Manifest & { license?: string; repository?: string | { url?: string }; homepage?: string }) | undefined
@@ -331,6 +389,19 @@ function collectClaudeDistribution(): ClaudeDistribution {
     )
   }
   return distribution
+}
+
+function collectSharpWindowsDistribution(): SharpWindowsDistribution {
+  const manifest = installedManifest(SHARP_WINDOWS_RUNTIME_PACKAGE)
+  const versionsPath = installedPackageFile(SHARP_WINDOWS_RUNTIME_PACKAGE, 'versions.json')
+  if (manifest === undefined || versionsPath === undefined) {
+    throw new Error(`gen-third-party-notices: cannot resolve ${SHARP_WINDOWS_RUNTIME_PACKAGE} manifest and versions.json; run \`pnpm install\`.`)
+  }
+  const parsed = JSON.parse(readFileSync(versionsPath, 'utf8')) as unknown
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`gen-third-party-notices: ${SHARP_WINDOWS_RUNTIME_PACKAGE} versions.json is not an object.`)
+  }
+  return sharpWindowsDistributionFromManifest(manifest, parsed as Record<string, unknown>)
 }
 
 /** Normalize a manifest repository/homepage value to a browsable https URL. */
@@ -656,6 +727,19 @@ ${rows.join('\n')}
 `
 }
 
+function renderSharpWindowsDistribution(
+  distribution: SharpWindowsDistribution | undefined,
+): string {
+  if (distribution === undefined) return ''
+  return `
+## Sharp Windows native distribution
+
+The project owner authorizes distribution of the exact \`${SHARP_WINDOWS_RUNTIME_PACKAGE}\` package identity while it declares \`${SHARP_WINDOWS_DECLARED_LICENSE}\`. The authorization does not classify these terms as permissive and does not cover \`sharp\`, another \`@img/sharp-*\` package, or a changed license declaration.
+
+The installed package is ${distribution.packageVersion} and its platform manifest identifies libvips ${distribution.libvipsVersion}. Electron distributions carry [the Sharp/libvips notice](apps/electron/legal/SHARP-LIBVIPS-NOTICE.md), the [GNU LGPL version 3 text](apps/electron/legal/LGPL-3.0.txt), and the [GNU GPL version 3 text](apps/electron/legal/GPL-3.0.txt) under \`resources/legal/\`. Package, license, or component-version changes require review of those materials before publication.
+`
+}
+
 /**
  * Render the complete notices document.
  * @returns the exact bytes `THIRD_PARTY_NOTICES.md` must hold.
@@ -672,6 +756,11 @@ export function render(): string {
     dep => dep.name === CLAUDE_AGENT_SDK_PACKAGE,
   )
     ? collectClaudeDistribution()
+    : undefined
+  const sharpWindowsDistribution = runtimeDeps.some(
+    dep => dep.name === SHARP_WINDOWS_RUNTIME_PACKAGE,
+  )
+    ? collectSharpWindowsDistribution()
     : undefined
 
   const nonPermissiveDev = devDeps.filter(dep => !isPermissive(dep.license))
@@ -715,6 +804,7 @@ pnpm applies local patches to the following packages at install time, so shipped
 
 ${patchedLines.join('\n')}
 ${renderClaudeDistribution(claudeDistribution)}
+${renderSharpWindowsDistribution(sharpWindowsDistribution)}
 
 ## Development-only npm dependencies
 

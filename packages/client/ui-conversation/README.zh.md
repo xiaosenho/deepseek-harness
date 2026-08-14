@@ -36,7 +36,7 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 逐会话 UI 状态中的选择与活跃视图位于已声明的聊天 store（`stores.ts` `createChatStore`）中；InputHub 拥有输入区状态机，并将草稿镜像到该 store 以便持久化。apply 将同一个 store handle 传给严格限定于会话的子树、聊天视图和详情注册，因此每个会话内共享一个实例，框架拥有其生命周期。组件保持纯粹：框架标准工具包提供 `useSession`／`sessionId`、全局 `useSessions`／`useWorkspaces`，以及输入状态机的 `useInput`／`inputActions`；store 表层与 inject factory 提供其余状态和回调。
 
-图片经粘贴与整页拖放进入：输入栏绑定 document 级拖拽监听（composer-bar slot 为 `kind: 'single'`，同一时刻至多一个 bar 绑定），文件拖拽悬停窗口时显示 `DropOverlay` 原子组件——纯文本拖拽不受影响，锁定或忙碌的 composer 显示禁用遮罩并拒绝 drop。两种手势共用一条对宿主 `imageLimits` 投影的加入预检（数量、单图字节、总字节）：会突破上限的加入整批拒收，立刻弹出点名上限的横幅，完全不进入附件栏。仍然到达的宿主侧拒绝按 `attachment-error` 原因映射为产品文案（`image-labels.ts` 的 `attachmentErrorText`）；用户无法解决的原因折叠为一条带原因码的发送失败文案，非附件错误码保留开发者可读的原文加错误码。
+图片经粘贴与整页拖放进入：输入栏绑定 document 级拖拽监听（composer-bar slot 为 `kind: 'single'`，同一时刻至多一个 bar 绑定），文件拖拽悬停窗口时显示 `DropOverlay` 原子组件——纯文本拖拽不受影响，锁定或忙碌的 composer 显示禁用遮罩并拒绝 drop。两种手势共用一条对宿主 `imageLimits` 投影的加入预检（数量、单图字节、总字节）：会突破上限的加入整批拒收，立刻弹出点名上限的横幅，完全不进入附件栏。仍然到达的宿主侧拒绝按 `attachment-error` 原因映射为产品文案（`image-labels.ts` 的 `attachmentErrorText`）；用户无法解决的原因折叠为一条带原因码的发送失败文案，非附件错误码保留开发者可读的原文加错误码。仅存在于浏览器中的草稿附件 id 使用 `crypto.getRandomValues()`，因此图片加入可在没有仅限安全上下文的 `crypto.randomUUID()` 的非安全明文 HTTP origin 上使用。
 
 输入栏为 `'conversation.input.plan'`（位于本地 access 模式控件右侧）和 `'conversation.input.model'`（渲染在 pending 指示器与发送／停止控件之前）声明会话作用域的单实例 seat，并为 overlay、dock、left 和 right 输入扩展声明列表 slot。各功能包拥有相应控件及其状态；ui-conversation 提供放置位置、`locked` owner prop 和标准 slot share。前置加号按钮是 Command launcher，而非附件入口：它要求当前会话的 `InputTriggerController` 基于 textarea 当前 selection，只打开 `/` trigger 的 `command` source，同时 ui-input-trigger 既有的 `MenuView` 仍是唯一的浮层菜单与 pick 路径。不引入 File 行、file input、上传协议或第二套菜单组件。当 `plan` 投影的有效目标为 plan mode 时，InputBar 将文本框 placeholder 切换为 plan 任务措辞，经本包注册的 `conversation` locale 命名空间（`placeholder.plan` / `hint.plan` 键）本地化，并与已认领 `/plan` 命令的提示逐字共用同一份文案（经标准套件 `useProjection` 读取的 host 折叠值；owner 提供的 placeholder 优先）。另一个会话视图活跃时，待处理的 composer 接管仍保持挂载，使被阻塞的 agent（智能体）仍能收到回答；没有待处理交互时，活跃会话的 composer 归 Chat 所有。composer bar slot 本身为 `session-maybe`：没有当前会话时，同一个 bar 会让消息操作保持不可交互（machine face 均缺席、`disabled` owner prop），整张虚线卡片可经指针打开现有 Workspace picker，只读 textarea 也可通过 Enter 或 Space 打开。禁用控件会把指针事件交给卡片，卡片也会拦下 `pointerdown`，避免已打开 picker 的外点关闭与重新打开发生竞态。它不会换入一棵平行树，因此选择 Workspace 时 textarea DOM 不会被销毁；严格会话作用域的控件 seat 在会话存在之前保持为空。
 
@@ -46,13 +46,27 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
 
-## 模型体验
+## Model Experience
 
-无。会话 UI 在浏览器中渲染会话历史与流；这里没有任何内容进入模型请求。
+### 可选的中文语言引导
 
-#### KV Cache 影响
+#### What the model sees
 
-无；该包既不组装也不发送提供方请求。
+在通用设置中启用 `ui-conversation.chineseReasoning` 后，Host 会贡献一个显式用户覆盖 system-prompt section。它会跟在 agent 预设的 `complete` persona 之后，因此普通预设与固定提示词预设都会应用该偏好。偏好关闭时，该 section 为空并被省略；改变偏好会影响下一次模型请求，不需要重启 Host。
+
+##### 启用后的提示词
+
+```markdown
+Do all reasoning in Chinese. Reply in Chinese unless the user explicitly requests another language.
+```
+
+#### Token effect
+
+偏好启用时增加一组固定句子；不增加工具 schema、结果或动态上下文。
+
+#### KV Cache effect
+
+两次偏好变更之间，该 section 固定在 order 10，因此留在可复用的提示词前缀中。切换偏好会改变后续模型请求的这一前缀。
 
 ## 已知限制与暂缓事项
 

@@ -87,16 +87,23 @@ describe('ConversationController', () => {
     const b = await bench()
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:draft-1')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
+    vi.stubGlobal('crypto', {
+      getRandomValues(words: Uint32Array) {
+        return words.fill(1)
+      },
+    })
     try {
       const [attachment] = b.root.createDraftImages([
         new File([new Uint8Array(4)], 'a.png', { type: 'image/png' }),
       ])
       if (attachment === undefined) throw new Error('draft attachment missing')
+      expect(attachment.id).toBe('00000001000000010000000100000001')
       b.root.input.for(b.runtime.sessions.scope('s1')!).addImages([attachment.id])
       await b.runtime.sessions.remove('s1')
       expect(b.root.draftImages([attachment.id])).toEqual([])
       expect(revoked).toHaveBeenCalledWith('blob:draft-1')
     } finally {
+      vi.unstubAllGlobals()
       created.mockRestore()
       revoked.mockRestore()
     }

@@ -4,7 +4,11 @@
  */
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { CLIENT_EXTERNALS, clientBundle } from '../packages/client/tsdown.client.ts'
+import {
+  CLIENT_EXTERNALS,
+  INLINE_PRESENTATION_LIBRARIES,
+  clientBundle,
+} from '../packages/client/tsdown.client.ts'
 
 type ResolveId = (source: string) => null | { id: string; external: boolean }
 
@@ -82,6 +86,17 @@ describe('client bundle purity gate', () => {
     expect(() => resolveId('@deepseek-ai/dsh-goal')).toThrow(/purity/)
     expect(() => resolveId('@deepseek-ai/dsh-goal/client')).toThrow(/purity/)
     expect(() => resolveId('@deepseek-ai/dsh-goal/remote/nested')).toThrow(/purity/)
+  })
+
+  it('inlines only the declared Cordis-free presentation library package root', () => {
+    expect([...INLINE_PRESENTATION_LIBRARIES]).toEqual([
+      '@deepseek-ai/dsh-client-directory-picker-flows',
+    ])
+    expect(resolveId('@deepseek-ai/dsh-client-directory-picker-flows')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-client-directory-picker-flows/browse')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-client-directory-picker-flows/native')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-client-directory-picker-flows/client')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-client-directory-picker-flows-extra')).toThrow(/purity/)
   })
 
   it('throws on any other @deepseek-ai leak', () => {

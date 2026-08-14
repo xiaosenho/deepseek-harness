@@ -45,7 +45,7 @@ export function apply(ctx: ClientContext): void {
       select: selectProducedFiles,
       locale: NS,
       inject: () => ({
-        isLoopback: connection.isLoopback,
+        hasHostAuthority: connection.hasHostAuthority,
         hooks: { hostDescription: connection.hostDescription },
       }),
     }, ProducedFiles),

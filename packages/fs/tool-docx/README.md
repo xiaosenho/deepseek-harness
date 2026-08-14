@@ -46,6 +46,10 @@ Created DOCX resume (BYTE_COUNT bytes)
 
 #### What the model sees
 
+The system prompt adds this fixed instruction before the tool schema:
+
+##### Fixed instruction
+
 ```markdown
 Use export_docx only after the resume facts and wording are final. Supply structured sections, preserve every confirmed fact, and choose a new .docx path unless the user explicitly authorized replacement.
 ```

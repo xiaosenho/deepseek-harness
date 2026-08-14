@@ -75,6 +75,23 @@ async function harness(config: LlmPiAi.Config): Promise<Context> {
 }
 
 describe('hand-declared providers', () => {
+  it('offers every API-key protocol a hand-declared route can serve', () => {
+    expect(supportedProtocols()).toEqual([
+      'openai-completions',
+      'openai-responses',
+      'anthropic-messages',
+      'google-generative-ai',
+    ])
+    expect(() => buildProvider({
+      provider: 'gemini-gateway',
+      displayName: 'Gemini Gateway',
+      api: 'google-generative-ai',
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+      models: [],
+      namesCredential: true,
+    })).not.toThrow()
+  })
+
   it('serves a route pi-ai has never heard of from its own declaration', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness(gateway(`${server.url}/v1`))

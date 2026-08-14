@@ -15,8 +15,8 @@ import type { PiAiReplayState } from '../src/replay.ts'
 import { assemble, type AssembledResult } from './assemble.ts'
 
 interface ProviderCase {
-  provider: 'openai' | 'anthropic'
-  api: 'openai-responses' | 'anthropic-messages'
+  provider: 'openai' | 'anthropic' | 'google'
+  api: 'openai-responses' | 'anthropic-messages' | 'google-generative-ai'
   model: string
   apiKey?: string
   baseURL?: string
@@ -29,6 +29,8 @@ const azureOpenAIKey = process.env.AZURE_OPENAI_API_KEY
 // protocol, so falling back to DEEPSEEK_API_KEY turns the keyless skip into a 404.
 const anthropicApiKey = process.env.ANTHROPIC_API_KEY
 const anthropicBaseURL = process.env.DSH_PI_AI_ANTHROPIC_BASE_URL
+const geminiApiKey = process.env.GEMINI_API_KEY
+const geminiBaseURL = process.env.DSH_PI_AI_GEMINI_BASE_URL
 
 const providerCases: ProviderCase[] = [
   {
@@ -47,6 +49,13 @@ const providerCases: ProviderCase[] = [
     ...anthropicApiKey === undefined ? {} : { apiKey: anthropicApiKey },
     ...anthropicBaseURL === undefined ? {} : { baseURL: anthropicBaseURL },
   },
+  {
+    provider: 'google',
+    api: 'google-generative-ai',
+    model: process.env.DSH_PI_AI_GEMINI_MODEL ?? 'gemini-2.5-flash',
+    ...geminiApiKey === undefined ? {} : { apiKey: geminiApiKey },
+    ...geminiBaseURL === undefined ? {} : { baseURL: geminiBaseURL },
+  },
 ]
 
 const contexts: Context[] = []
@@ -57,6 +66,7 @@ async function harness(image?: StoredImageAttachment): Promise<Context> {
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(LlmPiAi, {
     providers: Object.fromEntries(providerCases.map(profile => [profile.provider, {
+      api: profile.api,
       ...profile.apiKey === undefined ? {} : { apiKey: profile.apiKey },
       ...profile.baseURL === undefined ? {} : { baseURL: profile.baseURL },
       ...profile.headers === undefined ? {} : { headers: profile.headers },

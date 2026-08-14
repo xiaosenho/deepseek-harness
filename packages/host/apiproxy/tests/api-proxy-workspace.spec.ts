@@ -179,6 +179,25 @@ const BROWSE_STUB: DirectoryPickerCapability = {
   },
 }
 
+/** Composite capability used by Electron: native locally and browse remotely. */
+const NATIVE_BROWSE_STUB: DirectoryPickerCapability = {
+  ...BROWSE_STUB,
+  kind: 'native-browse',
+  pick: async () => '/tmp/electron-project',
+}
+
+describe('host native-browse composition', () => {
+  it('serves both native picking and browse primitives', async () => {
+    const { api } = await harness(undefined, NATIVE_BROWSE_STUB)
+    expect((await api.host.pickDirectory(request({}), new AbortController().signal)).result)
+      .toEqual({ ok: true, value: { path: '/tmp/electron-project' } })
+    expect((await api.host.listDirectory(request({}), new AbortController().signal)).result)
+      .toMatchObject({ ok: true, value: { path: '/home/user' } })
+    expect((await api.host.createDirectory(request({ path: '/home/user', name: 'fresh' }))).result)
+      .toEqual({ ok: true, value: { path: '/home/user/fresh' } })
+  })
+})
+
 describe('host.listDirectory / host.createDirectory', () => {
   it('serves listings and creation through the browse capability, defaulting to home', async () => {
     const { api } = await harness(undefined, BROWSE_STUB)

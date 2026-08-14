@@ -49,7 +49,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
   /**
    * @param api - settings wire face.
    * @param spec - namespace identity and optional narrowing decoder.
-   * @param persistence - remote browsers remain process-local because settings RPCs are loopback-only.
+   * @param persistence - clients without Host authority remain process-local and never call settings RPCs.
    */
   constructor(
     private readonly api: SettingsFace,
@@ -248,7 +248,7 @@ export class SettingsScopeBinder extends Service {
     const controller = new SettingsScopeController<T>(
       connection.api,
       spec,
-      connection.isLoopback ? 'host' : 'memory',
+      connection.hasHostAuthority ? 'host' : 'memory',
     )
     ctx.effect(() => {
       const refresh = (namespace?: string): void => {

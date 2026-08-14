@@ -28,11 +28,15 @@ The manifest set is derived from the `packages:` members the root `pnpm-workspac
 
 The project owner separately authorizes distribution of every official `@anthropic-ai/claude-agent-sdk` version and the official Claude Code CLI/platform payloads that version declares through `optionalDependencies`. The generator represents this as one exact direct-package identity exception, not as a permissive-license override: `SEE LICENSE IN README.md` and `SEE LICENSE IN LICENSE.md` remain non-permissive classifications, and every unrelated non-permissive runtime still fails closed. When the SDK is present, the generator reads its installed manifest, rejects optional identities outside the official SDK payload prefix, derives the current SDK, CLI, and payload versions, verifies the installed host payload's identity, version, and declared-license field, and renders the complete SDK-declared payload set in a separate notices section. Version, declared-license, and payload-set changes do not require new identity authorization, but they still require ordinary dependency, lockfile, compatibility, terms, and notices review.
 
+The project owner also authorizes only the exact `@img/sharp-win32-x64` identity while its manifest declares `Apache-2.0 AND LGPL-3.0-or-later`. The generator verifies that identity, declaration, package version, and libvips version, then renders the required legal-material links. It does not mark LGPL as permissive or authorize `sharp` and other platform packages. The [Electron Sharp LGPL distribution decision](2026-08-14-electron-sharp-lgpl-distribution.md) owns the packaged license texts, source provenance, and release obligations.
+
 ## Testing
 
 The same spec that asserts freshness pins the tiering rule against fixture manifests — including the two cases that motivate it, a `dependencies` entry of a test-support package and a plugin package no app mounts. It also pins the parsers against the shapes that would otherwise drop a package without a word: a `vendor/README.md` table that stops covering a vendored directory, a requirement array holding extras (`"httpx[http2]"`), a requirement with no version at all, an author-named `[dependency-groups]` table, and a workspace member area absent from any hardcoded list. Each of those is a silent-omission path, which is the failure mode a disclosure file cannot afford.
 
 The Claude distribution tests prove that only the exact direct SDK identity bypasses the ordinary non-permissive-runtime rejection, that the bypass does not change license classification, and that the payload set comes from the SDK manifest rather than a version or platform allowlist. Wrong SDK identities, missing payloads, and unrelated optional package identities all fail.
+
+The Sharp Windows tests prove that only the exact platform identity is authorized, that its declared terms remain non-permissive, and that identity, license, or libvips metadata changes fail before regeneration. Electron Builder tests separately require the notice and complete LGPL/GPL texts in packaged resources.
 
 ## Alternatives considered
 
@@ -48,6 +52,8 @@ The Claude distribution tests prove that only the exact direct SDK identity bypa
 
 **Treat the Claude SDK terms as permissive or add a reusable non-permissive allowlist.** Either shape would misstate the upstream declaration and let an unrelated runtime inherit authorization it was never granted. The narrow exception keys only the official direct SDK identity, while its optional payload identities are accepted solely as data declared by that SDK and remain visibly non-permissive.
 
+**Treat Sharp's LGPL terms as permissive or reuse a generic native-package allowlist.** That would hide a distribution obligation and authorize identities the owner did not review. The exception instead matches one package and one declared license string; its dedicated decision records the legal files and source provenance that the generator alone cannot supply.
+
 **Emit the notices as a bilingual pair.** Every other root document is paired, but the file is a table of upstream package names, SPDX identifiers, and URLs; the translatable surface is a handful of section blurbs. `scripts/translation-pairing.ts` scopes discovery to `README*`, `.agents/notes/**`, `docs/**`, and `python/**`, so a root non-README file is outside the bilingual corpus by construction, and the README pair carries the bilingual entry points into it.
 
 ## Consequences
@@ -59,3 +65,5 @@ The generator needs an installed tree, which makes it heavier than a pure-source
 The tiering rule is a policy encoded in one constant. Adding a workspace area that never ships — a second test-infrastructure tier, another site — requires extending `DEV_ONLY_AREAS`, or its dependencies will be disclosed as runtime.
 
 The Claude identity exception is deliberately narrower than the payload disclosure it activates. Upgrading the SDK needs no new owner authorization, but regeneration fails unless the installed SDK exposes its version, CLI version, and at least one official platform payload, and unless the current host payload matches the SDK declaration. Maintainers still review changed terms and compatibility; the generator prevents the authorization from silently widening to another package.
+
+The Sharp Windows exception is fixed to one package identity and one license declaration. A changed identity or declaration fails closed, while a package or libvips version change makes the generated notice and packaged legal-material checks fail until a maintainer reviews and updates the distribution record.

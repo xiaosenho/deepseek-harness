@@ -9,7 +9,9 @@ import {
 import type {
   BusyEnterBehavior, ComposerSubmitGesture, InputSubmitMode,
 } from '../contract/composer-submission.ts'
-import { BUSY_ENTER_FIELD, DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
+import {
+  BUSY_ENTER_FIELD, CHINESE_REASONING_FIELD, DEFAULT_BUSY_ENTER_BEHAVIOR, DEFAULT_CHINESE_REASONING,
+} from '../../submission-settings.ts'
 import type { ConversationSettings } from '../../submission-settings.ts'
 
 export { DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
@@ -22,6 +24,8 @@ export { DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
 export class ComposerSubmissionPolicy {
   /** Reactive preference source for the Settings row. */
   readonly busyEnter: SnapshotStore<BusyEnterBehavior> = createSnapshotStore(DEFAULT_BUSY_ENTER_BEHAVIOR)
+  /** Reactive Chinese-reasoning preference source for the Settings row. */
+  readonly chineseReasoning: SnapshotStore<boolean> = createSnapshotStore(DEFAULT_CHINESE_REASONING)
   private readonly host: SettingsScope<ConversationSettings> | undefined
 
   /**
@@ -68,12 +72,25 @@ export class ComposerSubmissionPolicy {
   }
 
   /**
+   * Change whether model reasoning and replies default to Chinese.
+   * @param enabled - true to contribute the language guidance.
+   */
+  setChineseReasoning(enabled: boolean): void {
+    if (this.chineseReasoning.getSnapshot() === enabled) return
+    this.chineseReasoning.set(enabled)
+    void this.host?.set(CHINESE_REASONING_FIELD, enabled)
+  }
+
+  /**
    * Adopt the scope's accepted durable behavior without writing it back.
    * @param host - the constructor-narrowed scope driving this adoption.
    */
   private adopt(host: SettingsScope<ConversationSettings>): void {
     const section = host.getSnapshot().value
-    if (section === undefined || this.busyEnter.getSnapshot() === section.busyEnter) return
-    this.busyEnter.set(section.busyEnter)
+    if (section === undefined) return
+    if (this.busyEnter.getSnapshot() !== section.busyEnter) this.busyEnter.set(section.busyEnter)
+    if (this.chineseReasoning.getSnapshot() !== section.chineseReasoning) {
+      this.chineseReasoning.set(section.chineseReasoning)
+    }
   }
 }

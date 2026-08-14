@@ -17,4 +17,4 @@
 ## 已知限制与延期工作
 
 - **Linux 依赖桌面工具**——Zenity 与 KDialog 均未安装时，`pick` 以包含解决建议的错误拒绝；它不会回退为手输路径提示（组合层面的回退是 browse 后端）。
-- **Windows 没有机制级回退**——通过打包依赖 koffi 运行的子进程选择器是唯一原生层级，因此 COM 拒绝或对话框崩溃会直接上报失败。组合层面的回退仍是 browse 后端。
+- **通用 Windows 后端没有机制级回退**——通过打包依赖 koffi 运行的子进程选择器是它唯一的原生层级，因此 COM 拒绝或对话框崩溃会直接上报失败。打包后的 Electron 改用其 [Electron 自有提供方](../directory-picker-electron/README.md)；其他组合仍以 browse 后端作为组合层面的回退。

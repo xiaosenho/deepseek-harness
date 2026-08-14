@@ -9,6 +9,7 @@ import { ConnectionController, type ConnectionConfig, type ConnectionSinks, type
 import { FixtureApiClient } from './fixture.ts'
 import { WebApiClient } from './web-api-client.ts'
 import { createWebConnectionRpc } from './rpc.ts'
+import { consumeRemoteAccessFragment } from './remote-access.ts'
 import { isLoopbackHostname } from '../loopback-hostname.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
 
@@ -62,6 +63,8 @@ export interface ConnectionHandle {
   readonly api: IApiClient
   /** Whether the current page authority is loopback; non-browser contexts default to true. */
   readonly isLoopback: boolean
+  /** Whether this client may request operations with full Host authority. */
+  readonly hasHostAuthority: boolean
   /** Generation-scoped Host facts, including native path-open capability. */
   readonly hostDescription: HostDescriptionSource
   /** Generic logical RPC channels over the same Connection transport. */
@@ -82,7 +85,9 @@ export interface ConnectionHandle {
  * @param ctx - client cordis context.
  */
 export function apply(ctx: Context): void {
+  const hasRemoteAccessCredential = consumeRemoteAccessFragment()
   const pageLocation = typeof location === 'undefined' ? undefined : location
+  const isLoopback = pageLocation === undefined || isLoopbackHostname(pageLocation.hostname)
   const fixture = pageLocation !== undefined && new URLSearchParams(pageLocation.search).has('fixture')
   const fixtureClient = fixture ? new FixtureApiClient() : undefined
   const api: IApiClient = fixtureClient ?? new WebApiClient()
@@ -103,7 +108,8 @@ export function apply(ctx: Context): void {
   }
   const handle: ConnectionHandle = {
     api,
-    isLoopback: pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
+    isLoopback,
+    hasHostAuthority: isLoopback || hasRemoteAccessCredential,
     hostDescription: {
       getSnapshot: () => description,
       subscribe: (listener) => {

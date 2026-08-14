@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import {
   CLAUDE_AGENT_SDK_PACKAGE,
+  SHARP_WINDOWS_DECLARED_LICENSE,
+  SHARP_WINDOWS_RUNTIME_PACKAGE,
   claudeDistributionFromManifest,
   collectPythonDependencies,
   isOwnerAuthorizedRuntime,
@@ -13,6 +15,7 @@ import {
   parsePyprojectRequirements,
   parseVendoredRows,
   render,
+  sharpWindowsDistributionFromManifest,
   tierExternalDeps,
   virtualManifest,
 } from './gen-third-party-notices.ts'
@@ -328,6 +331,44 @@ describe('official Claude distribution authorization', () => {
         '@anthropic-ai/unrelated': '1.0.0',
       },
     })).toThrow('outside its authorized platform-payload identity')
+  })
+})
+
+describe('Sharp Windows distribution authorization', () => {
+  it('authorizes only the exact platform identity without relabeling its license', () => {
+    expect(isOwnerAuthorizedRuntime(SHARP_WINDOWS_RUNTIME_PACKAGE)).toBe(true)
+    expect(isOwnerAuthorizedRuntime('@img/sharp-win32-arm64')).toBe(false)
+    expect(isOwnerAuthorizedRuntime('sharp')).toBe(false)
+    expect(isPermissive(SHARP_WINDOWS_DECLARED_LICENSE)).toBe(false)
+  })
+
+  it('derives package and libvips versions from installed metadata', () => {
+    expect(sharpWindowsDistributionFromManifest({
+      name: SHARP_WINDOWS_RUNTIME_PACKAGE,
+      version: '0.35.3',
+      license: SHARP_WINDOWS_DECLARED_LICENSE,
+    }, { vips: '8.18.3' })).toEqual({
+      packageVersion: '0.35.3',
+      libvipsVersion: '8.18.3',
+    })
+  })
+
+  it('rejects identity, license, and component metadata changes', () => {
+    expect(() => sharpWindowsDistributionFromManifest({
+      name: '@img/sharp-win32-arm64',
+      version: '0.35.3',
+      license: SHARP_WINDOWS_DECLARED_LICENSE,
+    }, { vips: '8.18.3' })).toThrow(`expected ${SHARP_WINDOWS_RUNTIME_PACKAGE} manifest`)
+    expect(() => sharpWindowsDistributionFromManifest({
+      name: SHARP_WINDOWS_RUNTIME_PACKAGE,
+      version: '0.35.3',
+      license: 'Apache-2.0',
+    }, { vips: '8.18.3' })).toThrow('license changed')
+    expect(() => sharpWindowsDistributionFromManifest({
+      name: SHARP_WINDOWS_RUNTIME_PACKAGE,
+      version: '0.35.3',
+      license: SHARP_WINDOWS_DECLARED_LICENSE,
+    }, {})).toThrow('versions.json has no vips version')
   })
 })
 

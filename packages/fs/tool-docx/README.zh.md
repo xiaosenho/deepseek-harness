@@ -46,6 +46,10 @@ Created DOCX resume (BYTE_COUNT bytes)
 
 #### 模型看到的内容
 
+系统提示词会在工具 schema 之前加入以下固定指导：
+
+##### 固定指导
+
 ```markdown
 Use export_docx only after the resume facts and wording are final. Supply structured sections, preserve every confirmed fact, and choose a new .docx path unless the user explicitly authorized replacement.
 ```

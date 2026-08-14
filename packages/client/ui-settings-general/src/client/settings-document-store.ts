@@ -27,7 +27,7 @@ export class SettingsDocumentStore {
   private generation = 0
 
   /**
-   * @param api - loopback settings wire face that reports and opens the provider document.
+   * @param api - Host-authorized settings wire face that reports and opens the provider document.
    */
   constructor(private readonly api: Pick<IApiClient, 'settings'>) {}
 
@@ -88,7 +88,7 @@ export class SettingsDocumentStore {
 
 /**
  * Refresh document availability after reconnect only when a surface has already requested it.
- * @param controller - optional loopback document state owner.
+ * @param controller - optional Host-authorized document state owner.
  */
 export function refreshDocumentIfLoaded(controller: SettingsDocumentStore | undefined): void {
   if (controller === undefined || controller.store.getSnapshot().status === 'idle') return

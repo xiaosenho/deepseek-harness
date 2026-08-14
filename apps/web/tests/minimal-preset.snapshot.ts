@@ -6,6 +6,7 @@ import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent-presets'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { assertFixtureInventory, launchWebScaffold, type WebScaffold } from './scaffold.ts'
 
@@ -20,6 +21,10 @@ describe('minimal agent preset', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({ replayFixture: FIXTURE })
+    await scaffold.ctx.settings.update(
+      settingsNamespace('ui-conversation'),
+      { chineseReasoning: true },
+    )
     disposeInjectedPrompt = scaffold.ctx.systemPrompt.section({
       name: 'test:injected-prompt',
       order: 999,
@@ -108,7 +113,9 @@ describe('minimal agent preset', () => {
         "editor": "Here's the content of {{cwd}}/preset-smoke.txt with line numbers (which has a total of 2 lines):
            1  MINIMAL_EDITOR_OK
            2",
-        "prompt": "You are a helpful software engineer assistant.",
+        "prompt": "You are a helpful software engineer assistant.
+
+      Do all reasoning in Chinese. Reply in Chinese unless the user explicitly requests another language.",
         "tools": [
           "bash",
           "str_replace_editor",

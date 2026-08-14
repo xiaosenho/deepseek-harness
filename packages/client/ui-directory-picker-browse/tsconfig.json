@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../directory-picker-flows"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {

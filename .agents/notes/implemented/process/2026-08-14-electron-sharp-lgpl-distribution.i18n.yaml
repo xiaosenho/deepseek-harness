@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-14-electron-sharp-lgpl-distribution.md
+2026-08-14-electron-sharp-lgpl-distribution.md: d9201fe54cc9686556e7a5fb44e10c3905d010ef
+2026-08-14-electron-sharp-lgpl-distribution.zh.md: 3702d25bd2de946facf47030fcc7f7b4e274b462

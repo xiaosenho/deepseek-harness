@@ -33,6 +33,15 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
 export const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
 
 /**
+ * Cordis-service-free browser libraries intentionally duplicated into each
+ * consuming plugin bundle. Keep exact package names: subpaths and client
+ * plugins remain forbidden cross-plugin value imports.
+ */
+export const INLINE_PRESENTATION_LIBRARIES: ReadonlySet<string> = new Set([
+  '@deepseek-ai/dsh-client-directory-picker-flows',
+])
+
+/**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
  * would read them as plugin packages. They carry no cross-plugin runtime
  * identity to share — the framework itself is a platform module (external),
@@ -208,7 +217,8 @@ function clientConfig(id: string, entry: string): UserConfig {
     plugins: [{
       // Bundle purity gate (build-time mirror of the module-edge rules):
       // platform seed entries stay external, inline-safe wire layers inline,
-      // and every other @deepseek-ai value import is a build error — a
+      // exact pure presentation libraries inline, and every other
+      // @deepseek-ai value import is a build error — a
       // cross-plugin value import either inlines a duplicate runtime instance
       // or requires a specifier the frozen module table cannot answer.
       // Cross-plugin collaboration goes through cordis services instead.
@@ -218,8 +228,9 @@ function clientConfig(id: string, entry: string): UserConfig {
         if (CLIENT_EXTERNALS.includes(source)) return null // platform module: external wins
         if (VENDORED_LIBRARY.test(source)) return null // vendored library: inline, no shared identity
         if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null // wire contribution: inline is the point
+        if (INLINE_PRESENTATION_LIBRARIES.has(source)) return null // pure browser library: deliberately duplicated
         throw new Error(
-          `client bundle purity: "${source}" is not a platform module (CLIENT_EXTERNALS), an inline-safe wire layer, or a generated /remote contribution — `
+          `client bundle purity: "${source}" is not a platform module (CLIENT_EXTERNALS), an inline-safe wire layer, a pure presentation library, or a generated /remote contribution — `
           + 'cross-plugin value imports are forbidden; collaborate through cordis services (type-only imports are erased and never reach this gate)',
         )
       },

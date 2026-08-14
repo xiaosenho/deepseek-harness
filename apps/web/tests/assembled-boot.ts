@@ -7,15 +7,19 @@
 //
 // Keyless and deterministic: the fixture is the fake server, so nothing here
 // reaches a model or the network.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { act, cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import type { WebBootEntry } from '@deepseek-ai/dsh-client-modules/client'
 import { AppWebEntry } from '@deepseek-ai/dsh-client-web'
 
+/** One host-catalog row paired with the workspace artifact served at its URL. */
+export type AssembledBootPlugin = WebBootEntry & { bundlePath: string }
+
 /** Boot entries for the minimal assembled graph, each carrying the workspace bundle it loads. */
-const PLUGINS: readonly (WebBootEntry & { bundlePath: string })[] = [
+const PLUGINS: readonly AssembledBootPlugin[] = [
   { id: '@deepseek-ai/dsh-typert-registry', bundlePath: 'packages/typert/registry/lib/client.js', url: '/plugins/typert-registry.js', rev: 'fx', inject: [], immediately: true },
   { id: '@deepseek-ai/dsh-client-connection', bundlePath: 'packages/client/connection/lib/client.js', url: '/plugins/connection.js', rev: 'fx', inject: [], immediately: true },
   { id: '@deepseek-ai/dsh-api-gateway', bundlePath: 'packages/api/gateway/lib/client.js', url: '/plugins/api-gateway.js', rev: 'fx', inject: ['@deepseek-ai/dsh-typert-registry', '@deepseek-ai/dsh-client-connection'], immediately: true },
@@ -47,11 +51,6 @@ const PLUGINS: readonly (WebBootEntry & { bundlePath: string })[] = [
   { id: '@deepseek-ai/dsh-client-ui-trajectory', bundlePath: 'packages/client/ui-trajectory/lib/client.js', url: '/plugins/ui-trajectory.js', rev: 'fx', inject: ['@deepseek-ai/dsh-client-ui-conversation'] },
 ]
 
-const bundles = new Map(PLUGINS.map(plugin => [
-  plugin.url,
-  readFileSync(join(process.cwd(), plugin.bundlePath), 'utf8'),
-]))
-
 interface FixtureWindow extends Window {
   __DSH_BOOT__?: { rev: string; entries: WebBootEntry[] }
   __ModuleLoader__?: unknown
@@ -65,6 +64,24 @@ class ResizeObserverStub {
 
 const win = window as FixtureWindow
 let unmount: (() => void) | undefined
+
+/** Read the built artifacts backing one assembled graph. */
+function readBundles(plugins: readonly AssembledBootPlugin[]): Map<string, string> {
+  return new Map(plugins.map(plugin => [
+    plugin.url,
+    readFileSync(join(process.cwd(), plugin.bundlePath), 'utf8'),
+  ]))
+}
+
+/**
+ * Whether the baseline graph and additional artifacts exist in this checkout.
+ * @param additionalBundlePaths - repository-relative artifacts added by a focused assembled test.
+ * @returns true when every required built bundle is present.
+ */
+export function assembledBootArtifactsAvailable(additionalBundlePaths: readonly string[] = []): boolean {
+  return [...PLUGINS.map(plugin => plugin.bundlePath), ...additionalBundlePaths]
+    .every(path => existsSync(join(process.cwd(), path)))
+}
 
 /**
  * Register the per-test jsdom setup and teardown the assembled boot needs:
@@ -117,6 +134,7 @@ export function mountAssembledApp(): void {
   const root = document.createElement('div')
   root.id = 'root'
   document.body.appendChild(root)
+  const bundles = readBundles(PLUGINS)
   win.__DSH_BOOT__ = { rev: 'fx', entries: PLUGINS.map(({ bundlePath: _bundlePath, ...plugin }) => plugin) }
   act(() => {
     const entry = new AppWebEntry(root, {
@@ -129,6 +147,39 @@ export function mountAssembledApp(): void {
     void entry.run()
     unmount = () => { entry.dispose() }
   })
+}
+
+/**
+ * Boot the assembled graph plus additional host-catalog rows and wait for all
+ * Loader entries to activate.
+ * @param additionalPlugins - catalog rows and built artifacts added to the baseline graph.
+ * @returns the settled client Cordis context for registry assertions.
+ */
+export async function mountAssembledAppAndWait(
+  additionalPlugins: readonly AssembledBootPlugin[],
+): Promise<Context> {
+  history.replaceState(null, '', '/?fixture')
+  const root = document.createElement('div')
+  root.id = 'root'
+  document.body.appendChild(root)
+  const plugins = [...PLUGINS, ...additionalPlugins]
+  const assembledBundles = readBundles(plugins)
+  win.__DSH_BOOT__ = {
+    rev: 'fx',
+    entries: plugins.map(({ bundlePath: _bundlePath, ...plugin }) => plugin),
+  }
+  const entry = new AppWebEntry(root, {
+    loadBundle: async (url) => {
+      const code = assembledBundles.get(url)
+      if (code === undefined) throw new Error(`missing built bundle ${url}`)
+      ;(0, eval)(code)
+    },
+  })
+  await act(async () => { await entry.run() })
+  unmount = () => { entry.dispose() }
+  // AppWebEntry keeps the application context private; the assembled test
+  // reads it only after run() settles so plugin registries can be inspected.
+  return (entry as unknown as { readonly ctx: Context }).ctx
 }
 
 /**

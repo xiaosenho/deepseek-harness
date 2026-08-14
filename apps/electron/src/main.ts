@@ -1,26 +1,206 @@
 /** Electron main-process host for the existing dsh Web profile. */
 
 import { join } from 'node:path'
-import { shell } from 'electron/common'
-import { app, BrowserWindow, dialog } from 'electron/main'
+import { clipboard, shell } from 'electron/common'
+import { app, BrowserWindow, dialog, Menu, net } from 'electron/main'
+import {
+  createApplicationMenuTemplate,
+  refreshRemoteAccessMenu,
+  type ApplicationMenuOptions,
+} from './application-menu.ts'
 import { resolveApplicationUrl } from './application-url.ts'
 import { WebBackend } from './backend.ts'
-import { isApplicationNavigation, isExternalNavigation } from './navigation.ts'
+import {
+  DIRECTORY_PICKER_HELPER_ARGUMENT,
+  pickElectronDirectory,
+  runDirectoryPickerHelper,
+} from './directory-picker-helper.ts'
+import {
+  createApplicationNavigationGuard,
+  isExternalNavigation,
+  loadRestartedApplication,
+} from './navigation.ts'
+import { RemoteAccessController } from './remote-access-controller.ts'
+import {
+  changeRemoteAccessFromMenu,
+  copyRemoteAccessUrl,
+  showRemoteAccessDetails,
+  type NativeRemoteAccessOptions,
+} from './remote-access-menu.ts'
+import { FatalRemoteAccessRecovery } from './remote-access-recovery.ts'
+import { ExitBarrier } from './exit-barrier.ts'
+import {
+  installUpdateAfterShutdown,
+  OtaUpdateController,
+  type InstallDownloadedUpdate,
+} from './updater.ts'
 
 app.setName('DeepSeek Harness')
 app.setPath('userData', join(app.getPath('appData'), 'DeepSeek Harness'))
 
 let mainWindow: BrowserWindow | undefined
 let applicationUrl: URL | undefined
+let remoteAccess: RemoteAccessController | undefined
 let quitting = false
 const backend = new WebBackend()
+const exitBarrier = new ExitBarrier()
+const fatalRemoteAccessRecovery = new FatalRemoteAccessRecovery()
+const directoryPickerHelper = process.argv.includes(DIRECTORY_PICKER_HELPER_ARGUMENT)
+const isCurrentApplicationNavigation = createApplicationNavigationGuard(() => applicationUrl)
+const otaUpdater = new OtaUpdateController({
+  ...(process.env.DSH_ELECTRON_OTA_URL === undefined
+    ? {}
+    : { baseUrl: process.env.DSH_ELECTRON_OTA_URL }),
+  currentVersion: app.getVersion(),
+  fetch: (input, init) => net.fetch(input, init),
+  isPackaged: app.isPackaged,
+  onForceUpdateReady: restartForForcedUpdate,
+  platform: process.platform,
+})
 
 function openExternal(target: string): void {
   if (isExternalNavigation(target)) void shell.openExternal(target)
 }
 
+function stopOwnedProcesses(): Promise<void> {
+  return remoteAccess?.shutdown() ?? backend.stop()
+}
+
+function relaunchAfterInstallFailure(error: Error): void {
+  console.error('The downloaded update installer failed after process shutdown.', error)
+  app.relaunch()
+  app.exit(1)
+}
+
+function configureApplicationMenu(): void {
+  const applicationName = app.getName()
+  const currentVersion = app.getVersion()
+  const controller = remoteAccess
+  const menuOptions: ApplicationMenuOptions = {
+    applicationName,
+    checkForUpdates: () => otaUpdater.check(),
+    currentVersion,
+    platform: process.platform,
+    showMessageBox: options => dialog.showMessageBox(options),
+  }
+  if (controller !== undefined) {
+    menuOptions.remoteAccess = {
+      state: controller.getState(),
+      commands: {
+        start: () => { runRemoteAccessChange(true) },
+        stop: () => { runRemoteAccessChange(false) },
+        showDetails: () => { runRemoteAccessDetails() },
+        copyUrl: () => { runRemoteAccessCopy() },
+      },
+    }
+  }
+  app.setAboutPanelOptions({ applicationName, applicationVersion: currentVersion })
+  Menu.setApplicationMenu(Menu.buildFromTemplate(createApplicationMenuTemplate(menuOptions)))
+}
+
+function nativeRemoteAccessOptions(controller: RemoteAccessController): NativeRemoteAccessOptions {
+  return {
+    applicationName: app.getName(),
+    controller,
+    navigate: navigateApplication,
+    refreshMenu: refreshInstalledRemoteAccessMenu,
+    showMessageBox: options => dialog.showMessageBox(options),
+    writeText: (text) => { clipboard.writeText(text) },
+  }
+}
+
+function refreshInstalledRemoteAccessMenu(): void {
+  const controller = remoteAccess
+  const menu = Menu.getApplicationMenu()
+  if (controller === undefined || menu === null) return
+  refreshRemoteAccessMenu(menu, controller.getState())
+}
+
+function logRemoteAccessMenuFailure(error: unknown): void {
+  console.error('The native Electron remote-access command failed.', error)
+}
+
+function runRemoteAccessChange(enabled: boolean): void {
+  const controller = remoteAccess
+  if (controller === undefined) return
+  void changeRemoteAccessFromMenu(enabled, nativeRemoteAccessOptions(controller))
+    .catch(logRemoteAccessMenuFailure)
+}
+
+function runRemoteAccessDetails(): void {
+  const controller = remoteAccess
+  if (controller === undefined) return
+  void showRemoteAccessDetails(nativeRemoteAccessOptions(controller))
+    .catch(logRemoteAccessMenuFailure)
+}
+
+function runRemoteAccessCopy(): void {
+  const controller = remoteAccess
+  if (controller === undefined) return
+  void copyRemoteAccessUrl(nativeRemoteAccessOptions(controller))
+    .catch(logRemoteAccessMenuFailure)
+}
+
+async function restartForForcedUpdate(install: InstallDownloadedUpdate): Promise<void> {
+  if (quitting) return
+  quitting = true
+  try {
+    await installUpdateAfterShutdown(
+      () => exitBarrier.prepare(stopOwnedProcesses),
+      () => { install(relaunchAfterInstallFailure) },
+    )
+  } catch (error) {
+    if (exitBarrier.canExit) {
+      relaunchAfterInstallFailure(error instanceof Error ? error : new Error(String(error)))
+      return
+    }
+    quitting = false
+    const detail = error instanceof Error ? error.message : String(error)
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'DeepSeek Harness',
+      message: 'The downloaded update could not restart DeepSeek Harness.',
+      detail,
+    })
+  }
+}
+
+function reportRemoteAccessFailure(error: Error): void {
+  if (quitting) return
+  void dialog.showMessageBox({
+    type: 'error',
+    title: 'DeepSeek Harness',
+    message: 'DeepSeek Harness could not change remote access.',
+    detail: error.message,
+  })
+}
+
+function reportFatalRemoteAccessFailure(error: Error): void {
+  if (quitting) return
+  void fatalRemoteAccessRecovery.run(
+    () => dialog.showMessageBox({
+      type: 'error',
+      title: 'DeepSeek Harness',
+      message: 'DeepSeek Harness must close because remote access could not recover safely.',
+      detail: error.message,
+    }),
+    () => { app.quit() },
+  )
+}
+
+function navigateApplication(url: URL): void {
+  if (quitting) return
+  const window = mainWindow
+  void loadRestartedApplication(
+    url,
+    (next) => { applicationUrl = next },
+    window === undefined ? undefined : target => window.loadURL(target),
+    reportFatalRemoteAccessFailure,
+  )
+}
+
 /** Create the isolated desktop window for one ready Web-profile origin. */
-function createWindow(url: URL): BrowserWindow {
+function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -38,14 +218,18 @@ function createWindow(url: URL): BrowserWindow {
     },
   })
   window.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (isApplicationNavigation(target, url)) void window.loadURL(target)
+    if (isCurrentApplicationNavigation(target)) void window.loadURL(target)
     else openExternal(target)
     return { action: 'deny' }
   })
   window.webContents.on('will-navigate', (event, target) => {
-    if (isApplicationNavigation(target, url)) return
+    if (isCurrentApplicationNavigation(target)) return
     event.preventDefault()
     openExternal(target)
+  })
+  window.webContents.on('page-title-updated', (event, title) => {
+    event.preventDefault()
+    window.setTitle(title)
   })
   window.once('ready-to-show', () => { window.show() })
   window.once('closed', () => {
@@ -58,10 +242,15 @@ function createWindow(url: URL): BrowserWindow {
 async function start(): Promise<void> {
   try {
     const defaultCwd = app.isPackaged ? app.getPath('home') : join(app.getAppPath(), '..', '..')
-    applicationUrl = process.env.DSH_ELECTRON_URL === undefined
-      ? await backend.start(
-        process.env.DSH_ELECTRON_CWD?.trim() || defaultCwd,
-        (code, signal) => {
+    if (process.env.DSH_ELECTRON_URL === undefined) {
+      const controller = new RemoteAccessController({
+        backend,
+        cwd: process.env.DSH_ELECTRON_CWD?.trim() || defaultCwd,
+        onTransitionError: (error, fatal) => {
+          if (fatal) reportFatalRemoteAccessFailure(error)
+          else reportRemoteAccessFailure(error)
+        },
+        onUnexpectedExit: (code, signal) => {
           if (quitting) return
           void dialog.showMessageBox({
             type: 'error',
@@ -70,10 +259,23 @@ async function start(): Promise<void> {
             detail: signal === null ? `Exit code: ${String(code)}` : `Signal: ${signal}`,
           }).finally(() => { app.quit() })
         },
-      )
-      : resolveApplicationUrl(process.env.DSH_ELECTRON_URL)
-    const window = createWindow(applicationUrl)
+        pickDirectory: signal => pickElectronDirectory(signal, {
+          execPath: process.execPath,
+          applicationPath: app.getAppPath(),
+          packaged: app.isPackaged,
+        }),
+      })
+      remoteAccess = controller
+      const location = await controller.start()
+      applicationUrl = location.loopbackUrl
+    } else {
+      applicationUrl = resolveApplicationUrl(process.env.DSH_ELECTRON_URL)
+      remoteAccess = undefined
+    }
+    const window = createWindow()
     await window.loadURL(applicationUrl.href)
+    configureApplicationMenu()
+    void otaUpdater.check()
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     await dialog.showMessageBox({
@@ -86,12 +288,23 @@ async function start(): Promise<void> {
   }
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (directoryPickerHelper) {
+  app.disableHardwareAcceleration()
+  void app.whenReady()
+    .then(() => runDirectoryPickerHelper(async () => {
+      const result = await dialog.showOpenDialog({
+        title: 'Select Workspace Directory',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    }))
+    .then((code) => { app.exit(code) }, () => { app.exit(1) })
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {
     if (mainWindow === undefined && applicationUrl !== undefined) {
-      const window = createWindow(applicationUrl)
+      const window = createWindow()
       void window.loadURL(applicationUrl.href)
     }
     mainWindow?.restore()
@@ -99,7 +312,7 @@ if (!app.requestSingleInstanceLock()) {
   })
   app.on('activate', () => {
     if (mainWindow === undefined && applicationUrl !== undefined) {
-      const window = createWindow(applicationUrl)
+      const window = createWindow()
       void window.loadURL(applicationUrl.href)
     }
   })
@@ -107,10 +320,17 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== 'darwin') app.quit()
   })
   app.on('before-quit', (event) => {
-    if (quitting) return
+    if (exitBarrier.canExit) return
     event.preventDefault()
+    if (quitting) return
     quitting = true
-    void backend.stop().finally(() => { app.quit() })
+    void exitBarrier.prepare(stopOwnedProcesses).then(
+      () => { app.quit() },
+      (error: unknown) => {
+        quitting = false
+        console.error('Failed to stop Electron-owned processes during exit.', error)
+      },
+    )
   })
   void app.whenReady().then(start)
 }

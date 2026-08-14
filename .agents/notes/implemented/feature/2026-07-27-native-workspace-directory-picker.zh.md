@@ -27,7 +27,7 @@ Status: implemented
 
 只有来自回环套接字、且携带同源浏览器元数据的请求才能调用原生对话框 RPC。该 RPC 不使用默认的 30 秒请求超时，因为系统对话框可能无限期保持打开；调用方中止或连接中止仍会传递至平台进程。
 
-平台适配器不经 shell 打开对话框——POSIX 上 spawn 原生工具，Windows 上进行进程内 COM 交互：
+平台适配器不经 shell 打开对话框——POSIX 上 spawn 原生工具，Windows 上进行子进程 COM 交互。打包后的 Electron 使用其 [Electron 自有原生提供方](../architecture/2026-08-14-electron-owned-native-directory-picker.md)，而不走该 Koffi/COM 路径：
 
 - macOS：`osascript` 和系统文件夹选择器。
 - Windows：koffi `IFileOpenDialog` 子进程，使用宿主接受的最佳线程 DPI 感知（可用时为 per-monitor-v2；不支持 PMv2 的主机级联到 per-monitor 或 system-aware）（见[进程内对话框 Note](2026-08-02-win32-in-process-folder-dialog.md)）；该层无回退——失败原样上报（见[PowerShell 链删除](../simplification/2026-08-04-drop-windows-powershell-picker-fallback.md)）。
@@ -43,7 +43,7 @@ Status: implemented
 
 当前 GUI 可以在 macOS、Windows 和 Linux 上通过原生选择器打开一个本地文件夹。取消操作不会改变任何状态，故障仍可重试；重复路径的处理具有幂等性，basename 相同的不同路径则可作为独立 Workspace 共存。选中的工作区及其显示名称会在启动新的空白会话前完成刷新。该选择器现已是获得工作区的唯一路径（见[单一路径 Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)）：操作者要么选一个已有目录，要么在选择器内新建一个。
 
-新增的宿主、运行时、组件和 GUI 测试覆盖原生边界、请求信任校验、取消与故障处理、已有路径复用、同 basename 路径收编和可见名称即时更新。该特权 RPC 仍仅面向本地桌面载体；远程 Web 目录浏览器不属于本次决策范围。
+新增的宿主、运行时、组件和 GUI 测试覆盖原生边界、请求信任校验、取消与故障处理、已有路径复用、同 basename 路径收编和可见名称即时更新。该特权 RPC 仍仅面向本地桌面载体。目录选择 seam 后来加入了远程 Web 目录浏览，但它仍然不能调用该 RPC。
 
 ## 风险
 

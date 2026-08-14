@@ -10,8 +10,29 @@
     ]
   },
   "include": [
+    "electron-builder.config.d.mts",
     "src",
     "tests",
     "tsdown.config.ts"
+  ],
+  "references": [
+    {
+      "path": "../../vendor/cordis"
+    },
+    {
+      "path": "../../vendor/loader"
+    },
+    {
+      "path": "../../vendor/include"
+    },
+    {
+      "path": "../../packages/boot/app-boot"
+    },
+    {
+      "path": "../../packages/host/directory-picker-electron"
+    },
+    {
+      "path": "../../packages/client/ui-directory-picker-electron"
+    }
   ]
 }

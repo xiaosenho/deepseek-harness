@@ -12,9 +12,10 @@ import {
   type ServerResponse as RpcServerResponse,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { bridge, type FetchHandler } from './http-bridge.ts'
-import { isTrustedApiRequest } from './api-request-trust.ts'
+import { isTrustedApiRequest, isTrustedNodeApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type {
+  ConnectionRpcAuthority,
   ConnectionRpcEndpointMatcher,
   ConnectionRpcHandler,
   ConnectionRpcHandlerOptions,
@@ -47,8 +48,13 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * Provide the Host half over the active HTTP server.
    * @param ctx - owning Connection plugin context.
    * @param trustedHosts - deployment authorities accepted by trusted-host channels.
+   * @param remoteAccessToken - optional proof required by trusted non-loopback channels.
    */
-  constructor(ctx: Context, private readonly trustedHosts: readonly string[]) {
+  constructor(
+    ctx: Context,
+    private readonly trustedHosts: readonly string[],
+    private readonly remoteAccessToken?: string,
+  ) {
     super(ctx, 'connection')
   }
 
@@ -79,7 +85,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
         if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {
           return fallback.fetch(request)
         }
-        if (interceptor.options.authority === 'loopback' && !isTrustedApiRequest(request, [])) {
+        if (interceptor.options.authority === 'loopback' && !isTrustedApiRequest(
+          request,
+          this.trustedHostsFor(interceptor.options.authority),
+          this.remoteAccessToken,
+        )) {
           return Promise.resolve(new Response('forbidden', { status: 403 }))
         }
         return interceptor.fetchHandler.fetch(request)
@@ -94,13 +104,13 @@ export class HostConnectionService extends Service implements HostConnectionHand
     options: ConnectionRpcHandlerOptions,
   ): () => Promise<void> {
     assertChannel(channel)
-    const trustedHosts = options.authority === 'loopback' ? [] : this.trustedHosts
+    const trustedHosts = this.trustedHostsFor(options.authority)
     const fetchHandler = rpcFetchHandler(channel, handler)
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,
       handler: async (req, res) => {
-        if (!isTrustedApiRequest(req, trustedHosts)) {
+        if (!isTrustedNodeApiRequest(req, trustedHosts, this.remoteAccessToken)) {
           res.writeHead(403)
           res.end('forbidden')
           return
@@ -138,6 +148,19 @@ export class HostConnectionService extends Service implements HostConnectionHand
         this.interceptors.delete(channel)
       }
     }, `client-connection: ${channel} rpc interceptor`)
+  }
+
+  /**
+   * Resolve the authorities one channel policy accepts. A configured token
+   * extends loopback policy to authenticated trusted Hosts; without one, the
+   * empty list keeps that policy strictly loopback.
+   * @param authority - registration policy to resolve.
+   * @returns trusted non-loopback authorities eligible for the request check.
+   */
+  private trustedHostsFor(authority: ConnectionRpcAuthority): readonly string[] {
+    return authority === 'trusted-host' || this.remoteAccessToken !== undefined
+      ? this.trustedHosts
+      : []
   }
 }
 

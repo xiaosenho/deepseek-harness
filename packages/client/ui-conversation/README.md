@@ -36,7 +36,7 @@ Keyboard message submission resolves delivery from the addressed session's runni
 
 Per-session UI state for selection and the active view lives in the declared chat store (`stores.ts` `createChatStore`); the InputHub owns the composer state machine and mirrors its draft into that store for persistence. Apply passes one store handle to the strict session subtree, chat view, and details registrations, so each session shares one instance and the framework owns its lifecycle. Components are pure: the framework standard kit supplies `useSession`/`sessionId`, global `useSessions`/`useWorkspaces`, and the input machine's `useInput`/`inputActions`; store faces and inject factories supply the remaining state and callbacks.
 
-Image intake accepts paste and whole-page drop: the bar binds document-level drag listeners (the composer-bar slot is `kind: 'single'`, so at most one bar binds them) and shows the `DropOverlay` atom while a file drag is over the window — text drags pass through untouched, and a locked or busy composer shows the blocked overlay and refuses the drop. Both gestures feed one intake pre-check against the host's `imageLimits` projection (count, per-image bytes, aggregate bytes): an addition that would break a limit is refused as a whole batch with an immediate banner naming the limit, and never enters the rail. Host-side rejections that arrive anyway surface as product copy mapped from the `attachment-error` reason (`image-labels.ts` `attachmentErrorText`); reasons the user cannot act on fold into one send-failed line carrying the reason code, and non-attachment error codes keep their developer-facing message plus code.
+Image intake accepts paste and whole-page drop: the bar binds document-level drag listeners (the composer-bar slot is `kind: 'single'`, so at most one bar binds them) and shows the `DropOverlay` atom while a file drag is over the window — text drags pass through untouched, and a locked or busy composer shows the blocked overlay and refuses the drop. Both gestures feed one intake pre-check against the host's `imageLimits` projection (count, per-image bytes, aggregate bytes): an addition that would break a limit is refused as a whole batch with an immediate banner naming the limit, and never enters the rail. Host-side rejections that arrive anyway surface as product copy mapped from the `attachment-error` reason (`image-labels.ts` `attachmentErrorText`); reasons the user cannot act on fold into one send-failed line carrying the reason code, and non-attachment error codes keep their developer-facing message plus code. Browser-local draft attachment ids use `crypto.getRandomValues()`, so image intake is available on non-secure plain HTTP origins where the secure-context-only `crypto.randomUUID()` is absent.
 
 The composer bar declares session-scoped single seats for `'conversation.input.plan'` (right of the local access-mode control) and `'conversation.input.model'` (immediately before the pending indicator and send/stop controls), plus list slots for overlay, dock, left, and right input extensions. Feature packages own each control and its state; ui-conversation supplies placement, the `locked` owner prop, and the standard slot shares. The leading plus button is a Command launcher, not an attachment surface: it asks the session's `InputTriggerController` to open only the `/` trigger's `command` source over the current textarea selection, while ui-input-trigger's existing `MenuView` remains the sole floating menu and pick path. No file row, file input, upload protocol, or second menu component is introduced. While the `plan` projection's effective target is plan mode, InputBar swaps its textarea placeholder to the plan-task wording, localized through the `conversation` locale namespace this package registers (the `placeholder.plan` / `hint.plan` keys) and shared verbatim with the claimed `/plan` command hint (a host-folded value read through the standard-kit `useProjection`; owner-supplied placeholders win). A pending composer takeover remains mounted when another conversation view is active so the blocked agent can still receive its answer; without a pending interaction, the active-session composer belongs to Chat. The composer-bar slot itself is `session-maybe`: with no current session the same bar keeps message actions inert (machine faces absent, `disabled` owner prop), while the whole dashed card opens the existing Workspace picker by pointer and the read-only textarea opens it through Enter or Space. Disabled controls release pointer events to the card, and the card contains `pointerdown` so the open picker's outside-close cannot race a reopen. The bar never swaps in a parallel tree, so the textarea DOM survives Workspace selection; strict-session control seats stay empty until a session exists.
 
@@ -48,11 +48,25 @@ A finished turn materializes one ordered `turn-tail` Conversation Node. Its engi
 
 ## Model Experience
 
-None, as the conversation UI renders session history and streams in the browser; nothing here reaches a model request.
+### Opt-in Chinese language guidance
+
+#### What the model sees
+
+When `ui-conversation.chineseReasoning` is enabled in General Settings, the Host contributes one explicit user-override system-prompt section. It follows an agent preset's `complete` persona, so the preference applies to ordinary and fixed-prompt presets. The section is empty and omitted while the preference is disabled; changing it affects the next model request without restarting the Host.
+
+##### Enabled prompt
+
+```markdown
+Do all reasoning in Chinese. Reply in Chinese unless the user explicitly requests another language.
+```
+
+#### Token effect
+
+One fixed sentence pair is added while the preference is enabled; no tool schema, result, or dynamic context is added.
 
 #### KV Cache effect
 
-None; this package neither assembles nor sends a provider request.
+The section stays fixed at order 10 between preference changes, so it remains in the reusable prompt prefix. Toggling the preference changes that prefix for subsequent model requests.
 
 ## Known Limitations and Deferred Work
 

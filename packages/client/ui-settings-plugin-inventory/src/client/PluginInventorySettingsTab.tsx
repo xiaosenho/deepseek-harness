@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconChevronDownOutline14,
+  IconRightUpOutline14,
   IconSearchOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -35,6 +36,12 @@ const PHASE_KEYS = {
   failed: 'failed',
   unloading: 'unloading',
 } satisfies Record<Exclude<PluginFiberPhase, null>, PluginInventoryLocaleKey>
+
+/** Public directory used to discover community plugin bundles. */
+export const PLUGIN_DIRECTORY_URL = 'https://github.com/topics/dsh-plugin'
+
+/** CLI command template for adding a bundle to the Electron Web profile. */
+export const PLUGIN_IMPORT_COMMAND = 'dsh plugin --profile web add <package-or-git-spec>'
 
 /** Localized accessible label for one root Fiber phase. */
 function phaseLabel(
@@ -98,6 +105,35 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
+      <section className={css.discovery} data-plugin-discovery aria-labelledby={`${catalogId}-discovery`}>
+        <div className={css.discoveryHeader}>
+          <div>
+            <h3 id={`${catalogId}-discovery`}>{t('discoveryTitle')}</h3>
+            <p>{t('discoveryDescription')}</p>
+          </div>
+          <a
+            className={css.discoveryLink}
+            href={PLUGIN_DIRECTORY_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t('discoveryAction')}
+            <IconRightUpOutline14 size={12} aria-hidden="true" />
+          </a>
+        </div>
+        <div className={css.importGuide}>
+          <h4>{t('importTitle')}</h4>
+          <ol>
+            <li>{t('importChoose')}</li>
+            <li>
+              {t('importInstall')}
+              <code>{PLUGIN_IMPORT_COMMAND}</code>
+            </li>
+            <li>{t('importRestart')}</li>
+          </ol>
+          <p className={css.securityNote}>{t('importWarning')}</p>
+        </div>
+      </section>
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'error' ? (
         <div className={css.failure}>

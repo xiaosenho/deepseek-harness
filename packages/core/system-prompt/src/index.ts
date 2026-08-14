@@ -21,9 +21,9 @@ declare module '@deepseek-ai/cordis' {
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): scoped listeners
      * receive only that scope's assemblies. The returned value is authoritative.
      * A supplied signal controls only this explicit assembly request and must not
-     * be retained to control later turns. A registered complete section is
-     * restored after this waterfall, so listeners cannot add to or replace
-     * that scope's system prompt.
+     * be retained to control later turns. A registered complete section and
+     * its explicit `appendAfterComplete` sections are restored after this
+     * waterfall, so listeners cannot add to or replace them.
      * @param assembly - the mutable assembly built from registered providers.
      * @param context - the caller's per-assembly context.
      * @mode waterfall
@@ -68,10 +68,17 @@ export interface PromptSection {
   /**
    * Treat this contribution as the complete system prompt. Assembly still
    * runs the cooperative waterfall so tools, contexts, and variables can be
-   * resolved, then restores this exact section as the sole prompt section.
-   * More than one effective complete section makes assembly fail.
+   * resolved, then restores this exact section before any explicit
+   * `appendAfterComplete` sections. More than one effective complete section
+   * makes assembly fail.
    */
   readonly complete?: boolean
+  /**
+   * Retain this section after an effective complete section. This is reserved
+   * for explicit user overrides that must apply to every persona; ordinary
+   * plugin guidance remains suppressed by the complete section.
+   */
+  readonly appendAfterComplete?: boolean
 }
 
 /** Dynamic model context materialized as a durable user-role snapshot. */
@@ -382,6 +389,9 @@ export class SystemPrompt extends Service {
     if (!Number.isFinite(section.order)) {
       throw new TypeError(`prompt section "${section.name}" order must be a finite number`)
     }
+    if (section.complete === true && section.appendAfterComplete === true) {
+      throw new TypeError(`prompt section "${section.name}" cannot be both complete and appendAfterComplete`)
+    }
     return this.layers.effect(
       this.ctx,
       layer => layer.sections.insert(section.name, section),
@@ -458,8 +468,8 @@ export class SystemPrompt extends Service {
    * Assemble global and scoped providers, detach tool parameters, apply
    * canonical ordering, then run the assembly waterfall. Scoped sections and
    * variables shadow globals. The returned waterfall value is authoritative
-   * except that an effective complete section is restored afterwards as the
-   * sole prompt section.
+   * except that an effective complete section and explicit
+   * `appendAfterComplete` sections are restored afterwards.
    * @param context - the optional scope and plugin-defined assembly fields.
    * @returns the post-waterfall assembly with any complete prompt enforced.
    */
@@ -507,6 +517,7 @@ export class SystemPrompt extends Service {
       throw new Error(`multiple complete prompt sections are active: ${completeSections.map(section => JSON.stringify(section.name)).join(', ')}`)
     }
     let completeSection: AssembledSection | undefined
+    const appendedSections: AssembledSection[] = []
     const sections = sectionDefinitions
       .map((section) => {
         const assembled = {
@@ -514,6 +525,7 @@ export class SystemPrompt extends Service {
           text: typeof section.text === 'function' ? section.text(context) : section.text,
         }
         if (section.complete === true) completeSection = { ...assembled }
+        if (section.appendAfterComplete === true) appendedSections.push({ ...assembled })
         return assembled
       })
     const assembly: PromptAssembly = {
@@ -536,7 +548,7 @@ export class SystemPrompt extends Service {
     if (completeSection === undefined && !runtimeContextSuppressed) return transformed
     return {
       ...transformed,
-      sections: completeSection === undefined ? transformed.sections : [completeSection],
+      sections: completeSection === undefined ? transformed.sections : [completeSection, ...appendedSections],
       contexts: runtimeContextSuppressed ? [] : transformed.contexts,
     }
   }

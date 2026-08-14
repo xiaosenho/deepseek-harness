@@ -17,4 +17,4 @@ None; this package neither assembles nor sends a provider request.
 ## Known Limitations and Deferred Work
 
 - **Linux requires desktop tooling** — with neither Zenity nor KDialog installed, `pick` rejects with an actionable error; it does not fall back to a typed-path prompt (the browse backend is that fallback at the composition level).
-- **Windows has no mechanism fallback** — the child-process picker through packaged koffi is the only native tier, so a COM refusal or dialog crash surfaces the failure. The browse backend remains the fallback at the composition level.
+- **The generic Windows backend has no mechanism fallback** — the child-process picker through packaged koffi is its only native tier, so a COM refusal or dialog crash surfaces the failure. Packaged Electron uses its [Electron-owned provider](../directory-picker-electron/README.md) instead; other compositions retain the browse backend as their composition-level fallback.

@@ -1,10 +1,20 @@
 /** Behavior of the /api browser-trust fence (rebinding + cross-site defense). */
 
+import type { IncomingMessage } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import { assertTrustedAuthority, isTrustedApiRequest } from '../src/api-request-trust.ts'
+import {
+  assertTrustedAuthority,
+  isTrustedApiRequest,
+  isTrustedNodeApiRequest,
+} from '../src/api-request-trust.ts'
+import { REMOTE_ACCESS_COOKIE_NAME } from '../src/remote-access.ts'
 
 function request(headers: Record<string, string | undefined>): { headers: Record<string, string | undefined> } {
   return { headers }
+}
+
+function nodeRequest(headers: Record<string, string>, remoteAddress?: string): IncomingMessage {
+  return { headers, socket: { remoteAddress } } as unknown as IncomingMessage
 }
 
 describe('isTrustedApiRequest', () => {
@@ -39,6 +49,48 @@ describe('isTrustedApiRequest', () => {
     expect(isTrustedApiRequest(request(headers), ['harness.internal'])).toBe(true)
     expect(isTrustedApiRequest(request(headers), ['harness.internal:9999'])).toBe(false)
     expect(isTrustedApiRequest(request(headers), [])).toBe(false)
+  })
+
+  it('requires exactly one matching remote-access cookie when a token is configured', () => {
+    const token = 'remote token/123'
+    const encoded = encodeURIComponent(token)
+    const remote = { host: 'harness.internal:3080', origin: 'http://harness.internal:3080' }
+    expect(isTrustedApiRequest(request({
+      ...remote,
+      cookie: `theme=dark; ${REMOTE_ACCESS_COOKIE_NAME}=${encoded}; another=value=with=equals`,
+    }), ['harness.internal'], token)).toBe(true)
+    expect(isTrustedApiRequest(request(remote), ['harness.internal'], token)).toBe(false)
+    expect(isTrustedApiRequest(request({
+      ...remote,
+      cookie: `${REMOTE_ACCESS_COOKIE_NAME}=wrong-token-1234`,
+    }), ['harness.internal'], token)).toBe(false)
+    expect(isTrustedApiRequest(request({
+      ...remote,
+      cookie: `${REMOTE_ACCESS_COOKIE_NAME}=${encoded}; ${REMOTE_ACCESS_COOKIE_NAME}=${encoded}`,
+    }), ['harness.internal'], token)).toBe(false)
+  })
+
+  it('does not require or grant remote access through a token on loopback', () => {
+    expect(isTrustedApiRequest(request({ host: '127.0.0.1:3080' }), [], 'remote-token-1234')).toBe(true)
+    expect(isTrustedApiRequest(request({
+      host: 'untrusted.internal:3080',
+      cookie: `${REMOTE_ACCESS_COOKIE_NAME}=remote-token-1234`,
+    }), [], 'remote-token-1234')).toBe(false)
+    expect(isTrustedApiRequest(request({ host: 'harness.internal:3080' }), ['harness.internal'])).toBe(true)
+  })
+
+  it('refuses a loopback Host carried by a non-loopback TCP peer', () => {
+    const headers = {
+      host: '127.0.0.1:3080',
+      origin: 'http://127.0.0.1:3080',
+      cookie: `${REMOTE_ACCESS_COOKIE_NAME}=remote-token-1234`,
+    }
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '192.168.1.50'), [], 'remote-token-1234')).toBe(false)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '::ffff:192.168.1.50'), [], 'remote-token-1234')).toBe(false)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers), [], 'remote-token-1234')).toBe(false)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '127.0.0.1'), [], 'remote-token-1234')).toBe(true)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '::1'), [], 'remote-token-1234')).toBe(true)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '::ffff:127.0.0.1'), [], 'remote-token-1234')).toBe(true)
   })
 
   it('matches Host, Origin, and trusted entries through WHATWG normalization (case, default port)', () => {

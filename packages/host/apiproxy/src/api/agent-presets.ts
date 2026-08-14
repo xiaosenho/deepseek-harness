@@ -3,10 +3,10 @@
  * session, plus the authoring calls behind it.
  *
  * `list` is ordinary: it carries ids and trust, and every preset picker needs
- * it. The authoring calls are privileged and loopback-pinned — a composition
- * names the plugins a session runs, so reading one is reconnaissance, and
- * although authoring is copy-only (no caller supplies composition text or a
- * path), copying and deleting still rearrange what the deployment offers.
+ * it. The authoring calls require Host authority — a composition names the
+ * plugins a session runs, so reading one is reconnaissance, and although
+ * authoring is copy-only (no caller supplies composition text or a path),
+ * copying and deleting still rearrange what the deployment offers.
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'

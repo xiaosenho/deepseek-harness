@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-14-electron-web-profile-host.md
-2026-08-14-electron-web-profile-host.md: 6f8d88f8e88c2ed90bad938d16b76b850356726b
-2026-08-14-electron-web-profile-host.zh.md: aa35a799c99f278e04f804d7b6711c1555c371b7
+2026-08-14-electron-web-profile-host.md: 85fdd2463f89def673568ec6ac1cb81a090592de
+2026-08-14-electron-web-profile-host.zh.md: cf5f14070512e296add925c0e97e2571de65c3ef

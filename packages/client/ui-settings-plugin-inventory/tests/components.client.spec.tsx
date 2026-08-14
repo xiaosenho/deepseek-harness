@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
+import {
+  PLUGIN_DIRECTORY_URL, PLUGIN_IMPORT_COMMAND, PluginInventorySettingsTab,
+} from '../src/client/PluginInventorySettingsTab.tsx'
 import type {
   PluginInventorySettingsTabInjected,
   PluginInventorySettingsTabProps,
@@ -33,6 +35,19 @@ const SNAPSHOT = {
 } as unknown as Snapshot
 
 describe('PluginInventorySettingsTab', () => {
+  it('links to the community directory and explains desktop import', async () => {
+    render(<PluginInventorySettingsTab {...props(async () => ({ entries: [] }))} />)
+
+    const directory = screen.getByRole('link', { name: en.discoveryAction })
+    expect(directory.getAttribute('href')).toBe(PLUGIN_DIRECTORY_URL)
+    expect(directory.getAttribute('target')).toBe('_blank')
+    expect(directory.getAttribute('rel')).toBe('noreferrer')
+    expect(screen.getByRole('heading', { name: en.importTitle })).toBeTruthy()
+    expect(screen.getByText(PLUGIN_IMPORT_COMMAND)).toBeTruthy()
+    expect(screen.getByText(en.importWarning)).toBeTruthy()
+    expect(await screen.findByText(en.empty)).toBeTruthy()
+  })
+
   it('renders runtime status only for enabled plugins', async () => {
     const deferred = Promise.withResolvers<Snapshot>()
     const list = vi.fn(() => deferred.promise)
@@ -44,7 +59,7 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.getByRole('searchbox', { name: en.search })).toBeTruthy()
     expect(screen.getByRole('heading', { name: en.catalog })).toBeTruthy()
     expect(view.container.querySelector('[data-plugin-count]')?.textContent).toBe('7')
-    expect(screen.getAllByRole('listitem')).toHaveLength(7)
+    expect(view.container.querySelectorAll('[data-plugin-entry]')).toHaveLength(7)
     expect(screen.getAllByText(en.enabledTag)).toHaveLength(6)
     expect(screen.getByText(en.disabledTag)).toBeTruthy()
     for (const value of [
@@ -79,19 +94,19 @@ describe('PluginInventorySettingsTab', () => {
   })
 
   it('filters by module name or Loader entry id', async () => {
-    render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT)} />)
+    const view = render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT)} />)
     const search = await screen.findByRole('searchbox', { name: en.search })
 
     fireEvent.change(search, { target: { value: 'disabled-entry' } })
-    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(view.container.querySelectorAll('[data-plugin-entry]')).toHaveLength(1)
     expect(screen.getByText('directory-picker-native')).toBeTruthy()
 
     fireEvent.change(search, { target: { value: 'cordis-plugin-hmr' } })
-    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(view.container.querySelectorAll('[data-plugin-entry]')).toHaveLength(1)
     expect(screen.getByText('hmr')).toBeTruthy()
 
     fireEvent.change(search, { target: { value: 'not-a-plugin' } })
-    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+    expect(view.container.querySelectorAll('[data-plugin-entry]')).toHaveLength(0)
     expect(screen.getByText(en.emptySearch)).toBeTruthy()
   })
 

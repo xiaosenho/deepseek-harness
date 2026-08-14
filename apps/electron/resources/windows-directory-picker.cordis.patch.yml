@@ -1,10 +1,10 @@
-# Electron's Node-mode child can terminate inside the Koffi/COM worker before
-# the worker protocol reports a result. Pin the complete browse interaction on
-# Windows so the packaged desktop application does not depend on that worker.
+# The local Electron page uses a native dialog owned by the desktop process;
+# authenticated LAN clients keep the in-app browser. The provider's private
+# IPC channel exists only between this app and its owned WebUI child.
 - id: directory-picker
   disabled: true
 - insert:
-    - id: directory-picker-browse
-      name: '@deepseek-ai/dsh-host-directory-picker-browse'
-    - id: ui-directory-picker-browse
-      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+    - id: directory-picker-electron
+      name: '@deepseek-ai/dsh-host-directory-picker-electron'
+    - id: ui-directory-picker-electron
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-electron'

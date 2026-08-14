@@ -1,0 +1,8 @@
+# Electron owns the final network policy for its default WebUI process.
+- id: webserver
+  config:
+    host: '127.0.0.1'
+    port: !!js ctx.webStartup.port ?? 0
+- id: connection
+  config:
+    trustedHosts: []

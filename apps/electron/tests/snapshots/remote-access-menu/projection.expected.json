@@ -1,0 +1,166 @@
+{
+  "externalWebUiRemoteMenuPresent": {
+    "darwin": false,
+    "win32": false,
+    "linux": false
+  },
+  "placement": {
+    "darwin": "DeepSeek Harness",
+    "win32": "help",
+    "linux": "help"
+  },
+  "states": {
+    "off": [
+      {
+        "id": "remote-access-status",
+        "label": "Status: Off",
+        "enabled": false,
+        "command": null
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "id": "remote-access-start",
+        "label": "Start Remote Access...",
+        "enabled": true,
+        "command": "start"
+      },
+      {
+        "id": "remote-access-details",
+        "label": "Show Connection Details...",
+        "enabled": false,
+        "command": "showDetails"
+      },
+      {
+        "id": "remote-access-copy",
+        "label": "Copy Connection URL",
+        "enabled": false,
+        "command": "copyUrl"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "id": "remote-access-stop",
+        "label": "Stop Remote Access...",
+        "enabled": false,
+        "command": "stop"
+      }
+    ],
+    "on": [
+      {
+        "id": "remote-access-status",
+        "label": "Status: On",
+        "enabled": false,
+        "command": null
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "id": "remote-access-start",
+        "label": "Start Remote Access...",
+        "enabled": false,
+        "command": "start"
+      },
+      {
+        "id": "remote-access-details",
+        "label": "Show Connection Details...",
+        "enabled": true,
+        "command": "showDetails"
+      },
+      {
+        "id": "remote-access-copy",
+        "label": "Copy Connection URL",
+        "enabled": true,
+        "command": "copyUrl"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "id": "remote-access-stop",
+        "label": "Stop Remote Access...",
+        "enabled": true,
+        "command": "stop"
+      }
+    ],
+    "changing": [
+      {
+        "id": "remote-access-status",
+        "label": "Status: Changing...",
+        "enabled": false,
+        "command": null
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "id": "remote-access-start",
+        "label": "Start Remote Access...",
+        "enabled": false,
+        "command": "start"
+      },
+      {
+        "id": "remote-access-details",
+        "label": "Show Connection Details...",
+        "enabled": false,
+        "command": "showDetails"
+      },
+      {
+        "id": "remote-access-copy",
+        "label": "Copy Connection URL",
+        "enabled": false,
+        "command": "copyUrl"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "id": "remote-access-stop",
+        "label": "Stop Remote Access...",
+        "enabled": false,
+        "command": "stop"
+      }
+    ],
+    "on-without-url": [
+      {
+        "id": "remote-access-status",
+        "label": "Status: On",
+        "enabled": false,
+        "command": null
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "id": "remote-access-start",
+        "label": "Start Remote Access...",
+        "enabled": false,
+        "command": "start"
+      },
+      {
+        "id": "remote-access-details",
+        "label": "Show Connection Details...",
+        "enabled": false,
+        "command": "showDetails"
+      },
+      {
+        "id": "remote-access-copy",
+        "label": "Copy Connection URL",
+        "enabled": false,
+        "command": "copyUrl"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "id": "remote-access-stop",
+        "label": "Stop Remote Access...",
+        "enabled": true,
+        "command": "stop"
+      }
+    ]
+  }
+}

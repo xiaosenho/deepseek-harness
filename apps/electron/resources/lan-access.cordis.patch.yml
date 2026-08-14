@@ -1,0 +1,10 @@
+# Electron binds its Web profile to the LAN and requires its per-launch token
+# on remote API requests. The ordinary dsh CLI keeps its loopback policy.
+- id: webserver
+  config:
+    host: '0.0.0.0'
+    port: !!js ctx.webStartup.port ?? 0
+- id: connection
+  config:
+    trustedHosts: !!js ctx.webRuntime.trustedHosts
+    remoteAccessToken: !!js process.env.DSH_ELECTRON_REMOTE_ACCESS_TOKEN ?? ''

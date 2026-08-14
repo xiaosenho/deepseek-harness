@@ -2940,7 +2940,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async pickDirectory(request, signal) {
         const capability = ctx.directoryPicker.capability()
-        if (capability.kind !== 'native') {
+        if (capability.kind !== 'native' && capability.kind !== 'native-browse') {
           return err(request, {
             code: 'directory-picker-unavailable',
             message: `host.pickDirectory needs the native capability; the composed picker serves "${capability.kind}"`,
@@ -2968,7 +2968,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async listDirectory(request, signal) {
         const capability = ctx.directoryPicker.capability()
-        if (capability.kind !== 'browse') {
+        if (capability.kind !== 'browse' && capability.kind !== 'native-browse') {
           return err(request, {
             code: 'directory-picker-unavailable',
             message: `host.listDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
@@ -2991,7 +2991,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async createDirectory(request) {
         const capability = ctx.directoryPicker.capability()
-        if (capability.kind !== 'browse') {
+        if (capability.kind !== 'browse' && capability.kind !== 'native-browse') {
           return err(request, {
             code: 'directory-picker-unavailable',
             message: `host.createDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,

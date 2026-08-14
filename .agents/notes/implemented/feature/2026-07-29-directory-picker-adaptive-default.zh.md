@@ -19,12 +19,12 @@ Status: implemented
 - **在 `AppCLIEntry` 里做启动胶水判定**（随附两行并带静态 `disabled`，由 `--directory-picker=auto|native|browse` 标志修补 `disabled`）。可行——`PatchOptions` 能修补元数据，模块扫描也会跳过禁用行——但把决策留成应用私有，此后每个组合都要重新实现；选择器插件让任何 `cordis.yml` 都获得同样的一行自适应。只有当某个部署需要不改自己的 yml 就*强制*指定后端时，才重新引入该标志。
 - **合并成一个按调用分支的插件**（client 先试 `pick`，收到 `directory-picker-unavailable` 再回退到浏览对话框）。否决：client 得把两套流程装进同一个 bundle——bundle 纯净门禁禁止跨插件的值导入，jscpd 禁止复制对话框——而且按调用探测让 browse 宿主每次打开都付出一次注定失败的 RPC。
 - **复活 wire 广播**，让两套 client 流程都挂载并按宿主的 kind 分支。否决：推翻 seam Agent Note 的那次删除，却服务不了任何选择器尚未服务的消费方，还与 `single` 目录流洞相冲突。
-- **按连接自适应**（同一台服务器，回环浏览器用 native、远程浏览器用 browse）。延期：需要按客户端的能力对象、上述广播，以及同时挂载两套流程；今天没有部署同时服务两种操作者形态。
+- **通用的按连接通告**（同一台服务器，回环浏览器用 native、远程浏览器用 browse）。对本选择器予以否决，因为它会恢复 wire kind，并在 single slot 中挂载互相竞争的流程。后来出现的 [Electron 自有提供方](../architecture/2026-08-14-electron-owned-native-directory-picker.md)改用一个复合宿主能力和一个感知连接类型的 client 占用者，服务这一具体的混合客户端部署。
 
 ## 后果
 
 - 随附的 web GUI 开箱即自适应：有人值守的本地宿主 → OS 选择器；SSH 启动、全网卡绑定、无头宿主、不支持的平台，或没有选择器二进制的 Linux → 应用内浏览器。探测是从启动上下文推断操作者位置，而任何启动侧信号都无法证明这一点：脱离的 tmux 会话会丢失 `SSH_*`；非 Aqua 的 darwin 进程仍被算作有显示；而 `ssh -L` 形态（在工作站本地启动、之后经转发端口访问，从 `127.0.0.1` 到达）会判定 `native`，把选择器弹在无人值守的工作站上——即便按连接自适应也修不了最后这一情形。错误的 `native` 选择会退化为后端既有的可重试失败对话框；处于这些形态的部署直接组合 `-browse`。
 - 选择器按运行时字符串（已导出的 `BACKEND_PACKAGES`）挂载后端，yml 行扫描看不到这一点；因此 `verify-cordis-config` 要求每个挂载 `-auto` 的组合把两个后端都声明为依赖，使无密钥的 Linux CI（它永远只会判定出 `browse`）无法掩盖被丢掉的 `-native` 依赖。随附树的 web e2e／快照通道（`apps/web/tests/scaffold.ts`）以 disable+insert 补丁固定 `-browse`——其预期输出取决于具体交互，绝不能依赖运行该套件的宿主。
-- 每次启动只判定一次，维持 seam 的能力稳定性约定；按连接的形态在有部署提出需求前仍不在范围内。
+- 每次启动只判定一次，维持本选择器的能力稳定性约定。Electron 组合单独处理它已知的混合客户端部署；通用选择器仍然只在启动时判定。
 - 同时挂载选择器**和**某个后端行会明确报错（重复的 `directoryPicker` 服务；`single` 洞中的重复流程）。
 - host 类型检查聚合现在引用两个后端项目（仅声明，node 入口不携带 client 合并），使选择器的 REAL-composition 测试能挂载它们——与 client 聚合对 `webserver` 的引用互为镜像。

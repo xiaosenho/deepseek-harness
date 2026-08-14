@@ -24,7 +24,7 @@ function acknowledgementOf(view: SettingsNamespaceView): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
-/** Coordinates durable Host acknowledgement or a process-local remote fallback. */
+/** Coordinates durable Host acknowledgement or a process-local fallback without Host authority. */
 export class WelcomeNoticeStore {
   /** uSES-safe state source shared by the registered welcome step. */
   readonly store: SnapshotStore<WelcomeNoticeState> = createSnapshotStore({
@@ -35,7 +35,7 @@ export class WelcomeNoticeStore {
 
   /**
    * @param api - settings wire face used for durable reads and writes.
-   * @param persistence - remote browsers use memory because settings is loopback-only.
+   * @param persistence - clients without Host authority use process-local memory.
    */
   constructor(
     private readonly api: Pick<IApiClient, 'settings'>,
@@ -74,7 +74,7 @@ export class WelcomeNoticeStore {
   }
 
   /**
-   * Persist this copy version, or advance only this process for a remote browser.
+   * Persist this copy version, or advance only this process in memory mode.
    * @returns true when the selected persistence mode accepted the acknowledgement.
    */
   async acknowledge(): Promise<boolean> {

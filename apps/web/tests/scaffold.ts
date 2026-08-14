@@ -268,11 +268,13 @@ export interface LaunchOptions {
    */
   telemetryUrl?: string
   /**
-   * Browse through a trusted non-loopback hostname that the browser resolves
-   * to loopback (for example `*.localhost`). The test server stays bound to
-   * 127.0.0.1; a non-resolving authority fails before Host trust is exercised.
+   * Browse through a trusted non-loopback hostname. The test server stays bound
+   * to 127.0.0.1, so the caller must arrange browser resolution through a name
+   * such as `*.localhost` or a browser host-resolver rule.
    */
   remoteAuthority?: string
+  /** Require this access token on trusted non-loopback browser requests. */
+  remoteAccessToken?: string
   /** Reuse an existing harness home so a second Host can verify user settings across origins. */
   harnessHome?: string
 }
@@ -447,9 +449,15 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // Preserve the composed surface-context choice because a patch replaces
     // the row's complete config.
     { id: 'web-runtime', config: { printUrl: false, surfaceContext } },
-    ...options.remoteAuthority === undefined
+    ...options.remoteAuthority === undefined && options.remoteAccessToken === undefined
       ? []
-      : [{ id: 'connection', config: { trustedHosts: [options.remoteAuthority] } }],
+      : [{
+        id: 'connection',
+        config: {
+          trustedHosts: options.remoteAuthority === undefined ? [] : [options.remoteAuthority],
+          ...options.remoteAccessToken === undefined ? {} : { remoteAccessToken: options.remoteAccessToken },
+        },
+      }],
     { id: 'settings', config: { dshHome: harnessHome } },
     { id: 'credentials', config: { dshHome: harnessHome } },
     // The shipped directory-picker row is the -auto chooser, which resolves

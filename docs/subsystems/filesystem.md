@@ -410,6 +410,20 @@ abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>
 abstract writeText( target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsWriteOutcome>
 
 /**
+ * Atomically create or replace a binary file. `expected` has the same
+ * create/replace semantics as {@link writeText}; the result reports the
+ * complete byte length rather than a textual diff basis.
+ * @param target - the resolved target to write.
+ * @param content - the complete bytes to publish.
+ * @param expected - the write intent guarding the write; omit for unconditional.
+ * @param signal - aborts before atomic publication takes effect.
+ * @param sandboxPolicy - the per-call mode and workspace root enforced by a
+ *   sandboxing provider; omit to use the provider default.
+ * @returns the operation, new version, and published byte length.
+ */
+abstract writeBytes( target: FsTarget, content: Uint8Array, expected?: FsWriteIntent, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsBinaryWriteOutcome>
+
+/**
  * Atomically edit literal text. When supplied, the version guard is checked
  * before matching so stale content reports `FS_STALE_VERSION`; omission edits
  * the current content without a freshness precondition.
@@ -427,7 +441,7 @@ abstract editText( target: FsTarget, edit: FsEditRequest, expected?: { version: 
 
 Types: [SandboxExecutionPolicy](sandbox.md)
 
-Source: [`packages/fs/fs/src/index.ts:86`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:89`](../../packages/fs/fs/src/index.ts)
 
 <a id="fs-events"></a>
 
@@ -450,7 +464,7 @@ Single-slot decision for the next FileSystem.editText. Calling `next()` yields a
 'fs/edit-intent'(target: FsTarget, actor: object | undefined, next: () => { version: FsVersion } | undefined | Promise<{ version: FsVersion } | undefined>): Promise<{ version: FsVersion } | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:66`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:69`](../../packages/fs/fs/src/index.ts)
 
 <a id="fsobserved--emit"></a>
 
@@ -471,17 +485,18 @@ Record an authoritative positive or negative observation. Listeners must be sync
 'fs/observed'(target: FsTarget, observation: FsObservation, actor: object | undefined): void
 ```
 
-Source: [`packages/fs/fs/src/index.ts:76`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:79`](../../packages/fs/fs/src/index.ts)
 
 <a id="fswrite-intent--waterfall"></a>
 
 #### `fs/write-intent` — waterfall
 
-Single-slot decision for the next FileSystem.writeText. Calling `next()` yields the bare provider's unconditional write; the first listener that returns an intent owns the decision rather than composing with peers.
+Single-slot decision for the next FileSystem.writeText or FileSystem.writeBytes. Calling `next()` yields the bare provider's unconditional write; the first listener that returns an intent owns the decision rather than composing with peers.
 
 ```ts cordis-catalog
 /**
- * Single-slot decision for the next {@link FileSystem.writeText}. Calling
+ * Single-slot decision for the next {@link FileSystem.writeText} or
+ * {@link FileSystem.writeBytes}. Calling
  * `next()` yields the bare provider's unconditional write; the first listener
  * that returns an intent owns the decision rather than composing with peers.
  * @param target - the resolved target about to be written.
@@ -491,5 +506,5 @@ Single-slot decision for the next FileSystem.writeText. Calling `next()` yields 
 'fs/write-intent'(target: FsTarget, actor: object | undefined, next: () => FsWriteIntent | undefined | Promise<FsWriteIntent | undefined>): Promise<FsWriteIntent | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:58`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:61`](../../packages/fs/fs/src/index.ts)
 <!-- END GENERATED cordis-surface -->

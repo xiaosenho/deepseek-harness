@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import type { SpawnOptions, SpawnSyncOptions } from 'node:child_process'
 import { describe, expect, it, vi } from 'vitest'
 import {
   killGroup,
@@ -14,6 +15,10 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 const { failNextClose, failNextUnlink } = vi.hoisted(() => ({
   failNextClose: { value: false },
   failNextUnlink: { value: false },
+}))
+const childProcessCalls = vi.hoisted(() => ({
+  spawn: [] as Array<{ command: string; args: readonly string[]; options: SpawnOptions }>,
+  spawnSync: [] as Array<{ command: string; args: readonly string[]; options: SpawnSyncOptions }>,
 }))
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
@@ -32,6 +37,20 @@ vi.mock('node:fs', async (importOriginal) => {
         throw Object.assign(new Error('simulated EIO on unlink'), { code: 'EIO' })
       }
       actual.unlinkSync(path)
+    },
+  }
+})
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  return {
+    ...actual,
+    spawn(command: string, args: readonly string[], options: SpawnOptions) {
+      childProcessCalls.spawn.push({ command, args, options })
+      return actual.spawn(command, args, options)
+    },
+    spawnSync(command: string, args: readonly string[], options: SpawnSyncOptions) {
+      childProcessCalls.spawnSync.push({ command, args, options })
+      return actual.spawnSync(command, args, options)
     },
   }
 })
@@ -582,6 +601,23 @@ describe('stdio dispositions', () => {
 })
 
 describe('windows tree semantics (injected platform)', () => {
+  it('hides the spawned child window', async () => {
+    childProcessCalls.spawn.length = 0
+    const running = spawnSubprocess(spec('true'), {
+      spillDir,
+      platform: 'win32',
+      taskkill: () => {},
+    })
+    await running.done
+    await running.waitForExit()
+
+    expect(childProcessCalls.spawn).toHaveLength(1)
+    expect(childProcessCalls.spawn[0]?.options).toMatchObject({
+      detached: false,
+      windowsHide: true,
+    })
+  })
+
   it('host-exit termination routes through taskkill immediately', async () => {
     const killed: number[] = []
     const running = spawnSubprocess(spec('exec sleep 60', { graceMs: 60_000 }), {
@@ -725,12 +761,18 @@ describe('tree-survivor escalation (terminate and bounded waits reach helpers th
 
 describe('coverage seams', () => {
   it('taskkillProcessTree ignores non-positive pids and contains a missing binary', () => {
+    childProcessCalls.spawnSync.length = 0
     expect(() => { taskkillProcessTree(-1) }).not.toThrow()
     expect(() => { taskkillProcessTree(0) }).not.toThrow()
     // On POSIX there is no taskkill; spawnSync reports the failure in its
     // result and the function stays silent — the same containment Windows
     // relies on for an already-absent tree.
     expect(() => { taskkillProcessTree(2 ** 30) }).not.toThrow()
+    expect(childProcessCalls.spawnSync).toEqual([{
+      command: 'taskkill',
+      args: ['/PID', String(2 ** 30), '/T', '/F'],
+      options: { stdio: 'ignore', windowsHide: true },
+    }])
   })
 
   it('a spawn-failed handle rejects done while waitForExit reports gone', async () => {

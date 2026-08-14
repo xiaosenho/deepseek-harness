@@ -401,16 +401,25 @@ export interface ConnectionConfig {
    * port-less `host` matching any port. The /api trust fence refuses any
    * request whose Host is neither loopback nor listed here, so a
    * non-loopback (`0.0.0.0`) deployment must declare the names it is reached
-   * by (the dsh CLI derives the machine's LAN IP literals itself). An entry
-   * that is not a bare, canonical authority fails the plugin load.
+   * by (the Web profile runtime derives the machine's LAN IP literals for an
+   * all-interface composition). An entry that is not a bare, canonical
+   * authority fails the plugin load.
    */
   trustedHosts?: string[]
+  /**
+   * Shared secret of at least 12 characters required from trusted non-loopback
+   * authorities. A valid secret grants access to token-eligible Host methods;
+   * explicitly loopback-only methods remain unavailable. Loopback requests
+   * never require it. When omitted, `trustedHosts` retains its existing
+   * authority-only behavior.
+   */
+  remoteAccessToken?: string
   /** Maximum buffered JSON body for every `/api` request. */
   maxRequestBodyBytes?: number
 }
 ```
 
-Source: [`packages/client/connection/src/index.ts:50`](../packages/client/connection/src/index.ts)
+Source: [`packages/client/connection/src/index.ts:54`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -602,7 +611,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/fs-local/src/index.ts:41`](../packages/fs/fs-local/src/index.ts)
+Source: [`packages/fs/fs-local/src/index.ts:42`](../packages/fs/fs-local/src/index.ts)
 
 <a id="deepseek-aidsh-fs-sandbox"></a>
 
@@ -768,6 +777,20 @@ export interface Config {
 ```
 
 Source: [`packages/host/directory-picker-browse/src/index.ts:181`](../packages/host/directory-picker-browse/src/index.ts)
+
+<a id="deepseek-aidsh-host-directory-picker-electron"></a>
+
+## `@deepseek-ai/dsh-host-directory-picker-electron`
+
+```ts config-catalog
+/** Validated Electron directory-picker configuration. */
+export interface Config {
+  /** Complete-result bound for one filesystem listing level; minimum 1, default 1000. */
+  maxEntries: number
+}
+```
+
+Source: [`packages/host/directory-picker-electron/src/index.ts:35`](../packages/host/directory-picker-electron/src/index.ts)
 
 <a id="deepseek-aidsh-host-frontend-static"></a>
 
@@ -2242,7 +2265,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:186`](../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts:193`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -2371,6 +2394,24 @@ export interface Config {
 ```
 
 Source: [`packages/shell/tool-bash-persistent/src/index.ts:405`](../packages/shell/tool-bash-persistent/src/index.ts)
+
+<a id="deepseek-aidsh-tool-docx"></a>
+
+## `@deepseek-ai/dsh-tool-docx`
+
+Requires: `tools` · `fs` · `systemPrompt`
+
+```ts config-catalog
+/** DOCX export bounds. */
+export interface Config {
+  /** Maximum total Unicode characters accepted across the structured resume. */
+  maxCharacters?: number
+  /** Maximum generated DOCX byte length. */
+  maxOutputBytes?: number
+}
+```
+
+Source: [`packages/fs/tool-docx/src/index.ts:24`](../packages/fs/tool-docx/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
@@ -3037,6 +3078,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-cordis` ([`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-deliverables` — requires `systemPrompt` ([`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse` ([`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-directory-picker-electron` ([`packages/client/ui-directory-picker-electron/src/index.ts`](../packages/client/ui-directory-picker-electron/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-input-trigger` ([`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts))
@@ -3122,6 +3164,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-atomic-write` ([`packages/util/atomic-write/src/index.ts`](../packages/util/atomic-write/src/index.ts))
 - `@deepseek-ai/dsh-base` ([`packages/bundle/base/src/index.ts`](../packages/bundle/base/src/index.ts))
 - `@deepseek-ai/dsh-brand` ([`packages/util/brand/src/index.ts`](../packages/util/brand/src/index.ts))
+- `@deepseek-ai/dsh-client-directory-picker-flows` ([`packages/client/directory-picker-flows/src/index.ts`](../packages/client/directory-picker-flows/src/index.ts))
 - `@deepseek-ai/dsh-client-schema-form` ([`packages/client/schema-form/src/index.ts`](../packages/client/schema-form/src/index.ts))
 - `@deepseek-ai/dsh-client-test-runtime` ([`packages/test-support/client-runtime/src/index.ts`](../packages/test-support/client-runtime/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-attachment` ([`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts))

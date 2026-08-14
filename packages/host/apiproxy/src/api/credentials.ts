@@ -5,6 +5,7 @@
  * value crosses the wire in exactly one direction, inside `credentials.set`.
  * There is no enumeration method by design: clients learn which references
  * exist from settings schemas and values (`apiKeyEnv` fields).
+ * Browser carriers admit every method in this domain only with Host authority.
  */
 
 import type { RpcRequest, RpcResponse } from './rpc.ts'

@@ -7,6 +7,109 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.discovery {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 2px 2px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.discoveryHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.discoveryHeader h3,
+.discoveryHeader p,
+.importGuide h4,
+.importGuide ol,
+.securityNote {
+  margin: 0;
+}
+
+.discoveryHeader h3 {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.discoveryHeader p {
+  max-width: 500px;
+  margin-top: 3px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.discoveryLink {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 0 11px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  text-decoration: none;
+}
+
+.discoveryLink:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.discoveryLink:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.importGuide {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.importGuide h4 {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.importGuide ol {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-left: 20px;
+}
+
+.importGuide code {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 5px;
+  padding: 5px 8px;
+  overflow-wrap: anywhere;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.securityNote {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .catalogHeading h3,
 .status,
 .failure p {
@@ -273,6 +376,10 @@
 }
 
 @media (max-width: 680px) {
+  .discoveryHeader {
+    flex-direction: column;
+  }
+
   .cards {
     grid-template-columns: minmax(0, 1fr);
   }

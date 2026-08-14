@@ -54,7 +54,8 @@ export interface HostApi {
 
   /**
    * Open the operating system's single-directory picker; cancellation returns
-   * null. Only served under the `native` capability.
+   * null. Only served under a native-capable directory picker, and browser
+   * carriers admit this method only with Host authority.
    */
   pickDirectory(
     request: RpcRequest<{}>,
@@ -85,9 +86,8 @@ export interface HostApi {
 
   /**
    * Open a filesystem path with the operating system's default application
-   * (Finder / Explorer / xdg-open hand-off). The browser carrier's
-   * prefix-wide trust fence covers this privileged method like every other
-   * `/api` request.
+   * (Finder / Explorer / xdg-open hand-off). Browser carriers admit this
+   * method only with Host authority.
    */
   openPath(
     request: RpcRequest<{ path: string }>,

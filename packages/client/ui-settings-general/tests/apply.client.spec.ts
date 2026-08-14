@@ -15,7 +15,7 @@ import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocum
 // the shipped Chinese copy, so they state the browser they assume.
 usePinnedBrowserLanguages('zh-CN')
 
-/** The seats this plugin fills for a loopback browser (slot name → expected component). */
+/** The seats this plugin fills for a browser with Host authority. */
 const SEATS = [
   ['settings.trigger', TriggerContent],
   ['settings.header', HeaderContent],
@@ -24,7 +24,7 @@ const SEATS = [
   ['settings.section', GeneralSection],
 ] as const
 
-async function bench(isLoopback = true) {
+async function bench(hasHostAuthority = true) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
@@ -46,7 +46,7 @@ async function bench(isLoopback = true) {
   }))
   ctx.provide('connection', {
     api: { settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
-    isLoopback,
+    hasHostAuthority,
   } as never)
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument }
 }
@@ -163,7 +163,7 @@ describe('ui-settings-general apply', () => {
     await vi.waitFor(() => { expect(b.settingsDescribe).toHaveBeenCalledTimes(2) })
   })
 
-  it('withholds the loopback-only document action off-loopback', async () => {
+  it('withholds the Host document action without Host authority', async () => {
     const b = await bench(false)
     declare(b.slots)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })

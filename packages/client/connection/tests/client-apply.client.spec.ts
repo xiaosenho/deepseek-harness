@@ -10,7 +10,15 @@ import { RpcId } from '../src/client/api.ts'
 import { FixtureApiClient } from '../src/client/fixture.ts'
 import { WebApiClient } from '../src/client/web-api-client.ts'
 
-type Win = { location?: { hostname: string; search: string; origin?: string } }
+type Win = {
+  location?: {
+    hash?: string
+    hostname: string
+    origin?: string
+    pathname?: string
+    search: string
+  }
+}
 type WebSocketGlobal = { WebSocket?: typeof WebSocket }
 
 const originalWebSocket = globalThis.WebSocket
@@ -48,6 +56,7 @@ class FakeWebSocket extends EventTarget {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   delete (globalThis as Win).location
   sockets.length = 0
   if (originalWebSocket === undefined) delete (globalThis as WebSocketGlobal).WebSocket
@@ -68,6 +77,7 @@ describe('connection client apply', () => {
     const handle = await mount()
     expect(handle.api).toBeInstanceOf(WebApiClient)
     expect(handle.isLoopback).toBe(true)
+    expect(handle.hasHostAuthority).toBe(true)
   })
 
   it('selects the fixture client under ?fixture (and with no location at all stays real)', async () => {
@@ -77,11 +87,33 @@ describe('connection client apply', () => {
     const handle = await mount()
     expect(handle.api).toBeInstanceOf(WebApiClient)
     expect(handle.isLoopback).toBe(true)
+    expect(handle.hasHostAuthority).toBe(true)
   })
 
   it('reports non-loopback page authority through the connection handle', async () => {
     ;(globalThis as Win).location = { hostname: '192.0.2.20', search: '' }
-    expect((await mount()).isLoopback).toBe(false)
+    const handle = await mount()
+    expect(handle.isLoopback).toBe(false)
+    expect(handle.hasHostAuthority).toBe(false)
+  })
+
+  it('grants client-side Host features to a paired non-loopback browser session', async () => {
+    let cookie = ''
+    vi.stubGlobal('location', {
+      hash: '#dsh-access=remote-token-1234',
+      hostname: '192.0.2.20',
+      pathname: '/',
+      replace: vi.fn(),
+      search: '',
+    })
+    vi.stubGlobal('document', {
+      get cookie() { return cookie },
+      set cookie(value: string) { cookie = value.split(';', 1)[0] ?? '' },
+    })
+    vi.stubGlobal('history', { state: null, replaceState: () => {} })
+    const handle = await mount()
+    expect(handle.isLoopback).toBe(false)
+    expect(handle.hasHostAuthority).toBe(true)
   })
 
   it('start() hands out one loop, rejects a second consumer, and stop() aborts the streams', async () => {
@@ -279,6 +311,80 @@ describe('connection client apply', () => {
     await expect(iterator.next()).resolves.toMatchObject({ done: true })
     expect(sockets).toHaveLength(1)
     expect(sockets[0]?.readyState).toBe(FakeWebSocket.CLOSED)
+  })
+
+  it('carries Host API calls without requiring secure-context randomUUID', async () => {
+    vi.stubGlobal('location', {
+      hostname: '192.0.2.20',
+      origin: 'http://192.0.2.20:3080',
+      search: '',
+    })
+    vi.stubGlobal('crypto', {
+      getRandomValues(bytes: Uint8Array) {
+        return bytes.fill(0)
+      },
+    })
+    const handle = await mount()
+    const original = globalThis.fetch
+    const seen: {
+      url: string
+      body: {
+        type: string
+        rpcId: string
+        method: string
+        payload: unknown
+      }
+    }[] = []
+    globalThis.fetch = async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (typeof init?.body !== 'string') throw new TypeError('expected a JSON string request body')
+      const body = JSON.parse(init.body) as {
+        type: string
+        rpcId: string
+        method: string
+        payload: unknown
+      }
+      seen.push({ url, body })
+      return Response.json({
+        type: 'server-response',
+        rpcId: body.rpcId,
+        result: {
+          ok: true,
+          value: {
+            version: '0-test',
+            cwd: '/host',
+            attachedSessions: 1,
+            canOpenPath: true,
+          },
+        },
+      })
+    }
+    try {
+      await expect(handle.api.host.describe({})).resolves.toEqual({
+        rpcId: '00000000-0000-4000-8000-000000000000',
+        result: {
+          ok: true,
+          value: {
+            version: '0-test',
+            cwd: '/host',
+            attachedSessions: 1,
+            canOpenPath: true,
+          },
+        },
+      })
+    } finally {
+      globalThis.fetch = original
+      vi.unstubAllGlobals()
+    }
+    expect(seen).toEqual([{
+      url: 'http://192.0.2.20:3080/api/host.describe',
+      body: {
+        type: 'client-request',
+        rpcId: '00000000-0000-4000-8000-000000000000',
+        method: 'host.describe',
+        payload: {},
+      },
+    }])
   })
 
   it('carries RPC calls without requiring secure-context randomUUID', async () => {

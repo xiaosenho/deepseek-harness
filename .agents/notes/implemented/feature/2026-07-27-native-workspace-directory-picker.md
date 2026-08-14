@@ -27,7 +27,7 @@ The workspace manager must upsert the returned workspace before the selection ca
 
 The native dialog RPC is accepted only from a loopback socket with same-origin browser metadata. The RPC does not use the default 30-second request timeout because a system dialog may remain open indefinitely; caller and connection aborts still propagate to the platform process.
 
-Platform adapters open the dialog without a shell — spawned native tools on POSIX, an in-process COM conversation on Windows:
+Platform adapters open the dialog without a shell — spawned native tools on POSIX and a child-process COM conversation on Windows. Packaged Electron uses its [Electron-owned native provider](../architecture/2026-08-14-electron-owned-native-directory-picker.md) instead of that Koffi/COM path:
 
 - macOS: `osascript` and the system folder chooser.
 - Windows: the koffi `IFileOpenDialog` child process with the best thread DPI awareness the host accepts (per-monitor-v2 when available; PMv2-less hosts cascade to per-monitor or system-aware) ([in-process dialog note](2026-08-02-win32-in-process-folder-dialog.md)); the tier has no fallback — failures surface as-is ([PowerShell chain removal](../simplification/2026-08-04-drop-windows-powershell-picker-fallback.md)).
@@ -43,7 +43,7 @@ Platform adapters open the dialog without a shell — spawned native tools on PO
 
 The current GUI opens one local folder through a native picker on macOS, Windows, and Linux. Cancelling changes no state, failures remain retryable, duplicate paths are idempotent, and distinct same-basename paths coexist as separate Workspaces. The selected workspace and its displayed name refresh before a new blank session starts. This picker is now the only route to a workspace ([one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)): the operator picks an existing directory, or creates one inside the chooser.
 
-The added host, runtime, component, and GUI tests cover the native boundary, request trust checks, cancellation and failure handling, existing-path reuse, same-basename adoption, and the immediate visible-name update. The privileged RPC remains specific to the local desktop carrier; a remote Web directory browser is outside this decision.
+The added host, runtime, component, and GUI tests cover the native boundary, request trust checks, cancellation and failure handling, existing-path reuse, same-basename adoption, and the immediate visible-name update. The privileged RPC remains specific to the local desktop carrier. Remote Web directory browsing was later added through the directory-picker seam, but it still cannot invoke this RPC.
 
 ## Risks
 

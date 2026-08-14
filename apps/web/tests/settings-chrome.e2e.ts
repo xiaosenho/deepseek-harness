@@ -3,7 +3,8 @@
 // real theme gesture — click 深色 and the whole cascade runs: ThemeRuntime preference -> Host settings
 // -> theme/change -> ui-layout's presenter -> body attribute -> alias token +
 // browser theme-color metadata)
-// the Language row and busy-state Enter preference (both Host-backed), plus
+// the Language row, busy-state Enter preference, and opt-in Chinese model
+// guidance (all Host-backed), plus
 // Permission as the persisted default for subsequently created sessions.
 // Zero model calls: everything is pure client + persistence state on a blank
 // frame, so there is no fixture and a stray stream would fail loud on the
@@ -24,6 +25,8 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/settings-chrome', import.meta.url))
 const DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'dialog.expected.md')
 const PLUGINS_EXPECTED = join(SNAPSHOT_DIR, 'plugins.expected.md')
+const PLUGIN_DISCOVERY_EXPECTED = join(SNAPSHOT_DIR, 'plugin-discovery.expected.md')
+const CHINESE_REASONING_EXPECTED = join(SNAPSHOT_DIR, 'chinese-reasoning.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
 const MODE = webSnapshotMode()
 
@@ -100,6 +103,17 @@ describe('web e2e: settings modal and General preferences', () => {
     await dialog.getByRole('button', { name: '插件', exact: true }).click()
     await dialog.getByRole('heading', { name: '插件', exact: true }).waitFor({ timeout: 10_000 })
     await dialog.getByRole('tab', { name: '插件列表', exact: true }).click()
+    const discovery = dialog.locator('[data-plugin-discovery]')
+    await discovery.waitFor({ timeout: 10_000 })
+    const directoryLink = discovery.getByRole('link', { name: '浏览社区插件' })
+    expect(await directoryLink.getAttribute('href')).toBe('https://github.com/topics/dsh-plugin')
+    expect(await directoryLink.getAttribute('target')).toBe('_blank')
+    const discoverySnapshot = await captureStableAria(
+      page,
+      '[data-plugin-discovery]',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(PLUGIN_DISCOVERY_EXPECTED, discoverySnapshot, MODE)
     const pluginRow = dialog.locator(PLUGIN_ROW_SELECTOR)
     await pluginRow.waitFor({ timeout: 10_000 })
     const expectedPluginCount = [...scaffold.ctx.loader.entries()]
@@ -393,6 +407,43 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
+  it('persists opt-in Chinese reasoning and contributes it to the model prompt', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-chinese-reasoning'))
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    const control = dialog.getByRole('switch', { name: '中文思考与回复' })
+    await control.waitFor({ timeout: 10_000 })
+    expect(await control.getAttribute('aria-checked')).toBe('false')
+
+    await control.click()
+
+    await expect.poll(() => control.getAttribute('aria-checked'), { timeout: 5_000 }).toBe('true')
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
+      .toMatch(/ui-conversation:\n(?:\s+.+\n)*\s+chineseReasoning: true/)
+    const section = (await scaffold.ctx.systemPrompt.assemble()).sections
+      .find(entry => entry.name === 'user:chinese-reasoning')
+    expect(section).toBeDefined()
+    await compareOrRefreshGolden(CHINESE_REASONING_EXPECTED, section?.text ?? '', MODE)
+
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const restored = page.getByRole('dialog', { name: '设置' })
+      .getByRole('switch', { name: '中文思考与回复' })
+    await expect.poll(() => restored.getAttribute('aria-checked'), { timeout: 5_000 }).toBe('true')
+
+    await restored.click()
+    await expect.poll(() => restored.getAttribute('aria-checked'), { timeout: 5_000 }).toBe('false')
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
+      .toMatch(/ui-conversation:\n(?:\s+.+\n)*\s+chineseReasoning: false/)
+    await expect.poll(async () => (await scaffold.ctx.systemPrompt.assemble()).sections
+      .find(entry => entry.name === 'user:chinese-reasoning')?.text, { timeout: 5_000 }).toBe('')
+    await page.keyboard.press('Escape')
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
+
   it('persists the settings language across reload and a distinct port', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-language'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
@@ -480,6 +531,9 @@ describe('web e2e: settings modal and General preferences', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['dialog.expected.md', 'plugins.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'chinese-reasoning.expected.md', 'dialog.expected.md', 'plugin-discovery.expected.md',
+      'plugins.expected.md',
+    ])
   })
 })

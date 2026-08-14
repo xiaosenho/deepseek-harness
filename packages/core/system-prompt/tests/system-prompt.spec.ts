@@ -283,22 +283,36 @@ describe('SystemPrompt', () => {
     expect(assembly.sections).toHaveLength(0)
   })
 
-  it('restores one complete section after the assembly waterfall', async () => {
+  it('restores one complete section and explicit user overrides after the assembly waterfall', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     ctx.systemPrompt.section({ name: 'complete', order: 10, text: 'Exact prompt.', complete: true })
     ctx.systemPrompt.section({ name: 'extra', order: 20, text: 'extra' })
+    ctx.systemPrompt.section({ name: 'user:override', order: 30, text: 'User override.', appendAfterComplete: true })
     ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
       const complete = assembly.sections.find(section => section.name === 'complete')
       if (complete === undefined) throw new Error('complete section missing before waterfall')
       complete.text = 'mutated'
+      const override = assembly.sections.find(section => section.name === 'user:override')
+      if (override === undefined) throw new Error('user override missing before waterfall')
+      override.text = 'mutated override'
       assembly.sections.push({ name: 'late', text: 'late' })
       return next()
     }, { prepend: true })
 
     expect((await ctx.systemPrompt.assemble()).sections).toEqual([
       { name: 'complete', text: 'Exact prompt.' },
+      { name: 'user:override', text: 'User override.' },
     ])
+  })
+
+  it('rejects a section that is both complete and appended after complete', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+
+    expect(() => ctx.systemPrompt.section({
+      name: 'contradictory', order: 0, text: 'x', complete: true, appendAfterComplete: true,
+    })).toThrow('cannot be both complete and appendAfterComplete')
   })
 
   it('rejects multiple effective complete sections', async () => {

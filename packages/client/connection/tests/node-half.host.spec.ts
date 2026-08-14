@@ -10,7 +10,20 @@ import type { ApiProxy } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { RpcId, type ClientRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
-import { API_PATH, apply, HOST_EVENTS_PATH, inject, MUX_EVENTS_PATH, type HostConnectionHandle } from '../src/index.ts'
+import {
+  API_PATH,
+  apply,
+  Config,
+  HOST_EVENTS_PATH,
+  inject,
+  MUX_EVENTS_PATH,
+  type ConnectionConfig,
+  type HostConnectionHandle,
+} from '../src/index.ts'
+import { REMOTE_ACCESS_COOKIE_NAME } from '../src/remote-access.ts'
+
+const REMOTE_ACCESS_TOKEN = 'remote-token-1234'
+const REMOTE_ACCESS_COOKIE = `${REMOTE_ACCESS_COOKIE_NAME}=${encodeURIComponent(REMOTE_ACCESS_TOKEN)}`
 
 /** Structural webServer fake recording both route registries. */
 function fakeHttpServer(
@@ -35,23 +48,37 @@ function fakeHttpServer(
 }
 
 /** Bodyless GET carrying the given headers (enough for the trust fence + bridge). */
-function fakeRequest(headers: Record<string, string>, url = `${API_PATH}/session.list`): IncomingMessage {
+function fakeRequest(
+  headers: Record<string, string>,
+  url = `${API_PATH}/session.list`,
+  remoteAddress?: string,
+): IncomingMessage {
   const request = Readable.from([]) as unknown as IncomingMessage
-  Object.assign(request, { url, method: 'GET', headers })
+  Object.assign(request, {
+    url,
+    method: 'GET',
+    headers,
+    socket: { remoteAddress: remoteAddress ?? '127.0.0.1' },
+  })
   return request
 }
 
 /** JSON POST carrying a complete client-request envelope. */
 function fakePost(headers: Record<string, string>, url: string, body: unknown): IncomingMessage {
   const request = Readable.from([Buffer.from(JSON.stringify(body))]) as unknown as IncomingMessage
-  Object.assign(request, { url, method: 'POST', headers: { 'content-type': 'application/json', ...headers } })
+  Object.assign(request, {
+    url,
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    socket: { remoteAddress: '127.0.0.1' },
+  })
   return request
 }
 
 /** Raw POST for malformed-body and media-type boundary cases. */
 function fakeRawPost(headers: Record<string, string>, url: string, body: string): IncomingMessage {
   const request = Readable.from([Buffer.from(body)]) as unknown as IncomingMessage
-  Object.assign(request, { url, method: 'POST', headers })
+  Object.assign(request, { url, method: 'POST', headers, socket: { remoteAddress: '127.0.0.1' } })
   return request
 }
 
@@ -74,9 +101,10 @@ function fakeResponse(): { response: ServerResponse; state: { status?: number; b
   return { response, state }
 }
 
-async function mounted(config?: { trustedHosts?: string[] }): Promise<{
+async function mounted(config?: ConnectionConfig): Promise<{
   routes: WebRoute[]
   upgrades: WebUpgradeRoute[]
+  connection: HostConnectionHandle
   dispose: () => Promise<void>
 }> {
   const ctx = new Context()
@@ -86,10 +114,22 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
   ctx.provide('apiProxy', {} as unknown as ApiProxy)
   const fiber = ctx.plugin({ inject: [...inject], apply }, config)
   await fiber.await()
-  return { routes, upgrades, dispose: () => fiber.dispose() }
+  return {
+    routes,
+    upgrades,
+    connection: ctx.get('connection') as HostConnectionHandle,
+    dispose: () => fiber.dispose(),
+  }
 }
 
 describe('connection node half', () => {
+  it('requires at least twelve characters for a configured remote-access token', () => {
+    expect(new Config({ remoteAccessToken: 'twelve-chars' })).toMatchObject({
+      remoteAccessToken: 'twelve-chars',
+    })
+    expect(() => new Config({ remoteAccessToken: 'too-short' })).toThrow()
+  })
+
   it('fails loud when the carrier cap cannot hold the configured image batch', () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
@@ -150,6 +190,62 @@ describe('connection node half', () => {
     await dispose()
   })
 
+  it('requires the remote-access cookie on both WebSocket upgrade routes', async () => {
+    const { upgrades, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+    })
+    for (const route of upgrades) {
+      for (const cookie of [
+        undefined,
+        `${REMOTE_ACCESS_COOKIE_NAME}=wrong-token-1234`,
+        `${REMOTE_ACCESS_COOKIE}; ${REMOTE_ACCESS_COOKIE}`,
+      ]) {
+        const socket = new PassThrough()
+        const chunks: Buffer[] = []
+        socket.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+        const ended = once(socket, 'end')
+        await route.handler(fakeRequest({
+          host: 'harness.example',
+          origin: 'http://harness.example',
+          'sec-fetch-site': 'same-origin',
+          ...cookie === undefined ? {} : { cookie },
+        }, route.path), socket, Buffer.alloc(0))
+        await ended
+        expect(Buffer.concat(chunks).toString()).toContain('HTTP/1.1 403 Forbidden')
+      }
+    }
+    await dispose()
+  })
+
+  it('rejects a loopback Host from a non-loopback peer on HTTP and WebSocket entries', async () => {
+    const { routes, upgrades, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+    })
+    const headers = {
+      host: '127.0.0.1:3080',
+      origin: 'http://127.0.0.1:3080',
+      cookie: REMOTE_ACCESS_COOKIE,
+    }
+    const [httpRoute] = routes
+    if (httpRoute === undefined) throw new Error('missing /api route')
+    const response = fakeResponse()
+    await httpRoute.handler(fakeRequest(headers, `${API_PATH}/settings.describe`, '192.168.1.50'), response.response)
+    expect(response.state.status).toBe(403)
+
+    for (const route of upgrades) {
+      const socket = new PassThrough()
+      const chunks: Buffer[] = []
+      socket.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+      const ended = once(socket, 'end')
+      await route.handler(fakeRequest(headers, route.path, '192.168.1.50'), socket, Buffer.alloc(0))
+      await ended
+      expect(Buffer.concat(chunks).toString()).toContain('HTTP/1.1 403 Forbidden')
+    }
+    await dispose()
+  })
+
   it('refuses an untrusted Host on any /api path before the bridge runs', async () => {
     const { routes, dispose } = await mounted()
     const { response, state } = fakeResponse()
@@ -161,15 +257,23 @@ describe('connection node half', () => {
     await dispose()
   })
 
-  it('pins privileged methods to loopback even for a declared trusted authority', async () => {
-    const { routes, dispose } = await mounted({ trustedHosts: ['harness.example'] })
-    // The privileged set: native dialogs plus the whole settings/credential
-    // configuration plane, reads included, plus the one method that makes the
-    // host fetch a caller-chosen URL. The same declared authority reaches
-    // ordinary reads (carrier-level 404 from the empty proxy proves the fence
-    // passed), but each privileged method stays loopback-only and 403s.
+  it('admits token-authorized methods but keeps the native chooser loopback-only', async () => {
+    const { routes, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+    })
+    const picker = fakeResponse()
+    await routes[0]!.handler(
+      fakeRequest(
+        { host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE },
+        `${API_PATH}/host.pickDirectory`,
+      ),
+      picker.response,
+    )
+    expect(picker.state.status).toBe(403)
+
     for (const method of [
-      'host.pickDirectory', 'host.openPath',
+      'host.openPath',
       'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
       'credentials.describe', 'credentials.set', 'credentials.unset',
       'llm.discoverModels',
@@ -178,16 +282,17 @@ describe('connection node half', () => {
       // drive the host desktop.
       'agentPreset.read', 'agentPreset.copy', 'agentPreset.openDocument', 'agentPreset.remove',
     ]) {
-      const denied = fakeResponse()
+      const admitted = fakeResponse()
       await routes[0]!.handler(
-        fakeRequest({ host: 'harness.example' }, `${API_PATH}/${method}`),
-        denied.response,
+        fakeRequest({ host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE }, `${API_PATH}/${method}`),
+        admitted.response,
       )
-      expect(denied.state.status).toBe(403)
-      expect(denied.state.body).toBe('forbidden')
+      // Carrier-level 404 from the empty proxy proves the trust checks passed.
+      expect(admitted.state.status).toBe(404)
     }
+    // Ordinary methods still reach the empty proxy after token validation.
     const read = fakeResponse()
-    await routes[0]!.handler(fakeRequest({ host: 'harness.example' }), read.response)
+    await routes[0]!.handler(fakeRequest({ host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE }), read.response)
     expect(read.state.status).not.toBe(403)
     await dispose()
   })
@@ -210,6 +315,98 @@ describe('connection node half', () => {
       host: 'harness.example:3080', origin: 'http://harness.example:3080', 'sec-fetch-site': 'same-origin',
     }), declared.response)
     expect(declared.state.status).toBe(404)
+    await dispose()
+  })
+
+  it('requires the configured token only from trusted non-loopback HTTP requests', async () => {
+    const { routes, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+    })
+    const route = routes[0]!
+    for (const [headers, status] of [
+      [{ host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE }, 404],
+      [{ host: 'harness.example' }, 403],
+      [{ host: 'harness.example', cookie: `${REMOTE_ACCESS_COOKIE_NAME}=wrong-token-1234` }, 403],
+      [{ host: 'harness.example', cookie: `${REMOTE_ACCESS_COOKIE}; ${REMOTE_ACCESS_COOKIE}` }, 403],
+      [{ host: '127.0.0.1:3080' }, 404],
+    ] as const) {
+      const response = fakeResponse()
+      await route.handler(fakeRequest(headers), response.response)
+      expect(response.state.status).toBe(status)
+    }
+    await dispose()
+  })
+
+  it('applies remote-access authentication to dedicated trusted-host RPC channels', async () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    const fiber = ctx.plugin({ inject: [...inject], apply }, {
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+    })
+    await fiber.await()
+    const calls: string[] = []
+    const connection = ctx.get('connection') as HostConnectionHandle
+    connection.rpc.handle('/rpc', async (endpoint) => {
+      calls.push(endpoint)
+      return { ok: true, value: null }
+    }, { authority: 'trusted-host' })
+    const route = routes.find(candidate => candidate.path === '/rpc')!
+    const request: ClientRequest = {
+      type: 'client-request',
+      rpcId: RpcId('rpc-authenticated'),
+      method: 'goals/create',
+      payload: {},
+    }
+
+    const missing = fakeResponse()
+    await route.handler(fakePost({ host: 'harness.example' }, '/rpc/goals/create', request), missing.response)
+    expect(missing.state.status).toBe(403)
+    const valid = fakeResponse()
+    await route.handler(fakePost({
+      host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE,
+    }, '/rpc/goals/create', request), valid.response)
+    expect(valid.state.status).toBe(200)
+    const loopback = fakeResponse()
+    await route.handler(fakePost({ host: '127.0.0.1:3080' }, '/rpc/goals/create', request), loopback.response)
+    expect(loopback.state.status).toBe(200)
+    expect(calls).toEqual(['goals/create', 'goals/create'])
+    await fiber.dispose()
+  })
+
+  it('extends dedicated loopback RPC authority only through a configured token', async () => {
+    const { routes, connection, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+    })
+    const calls: string[] = []
+    const remove = connection.rpc.handle('/private', async (endpoint) => {
+      calls.push(endpoint)
+      return { ok: true, value: null }
+    }, { authority: 'loopback' })
+    const route = routes.find(candidate => candidate.path === '/private')!
+    const request: ClientRequest = {
+      type: 'client-request',
+      rpcId: RpcId('rpc-private'),
+      method: 'settings/read',
+      payload: {},
+    }
+
+    const missing = fakeResponse()
+    await route.handler(fakePost({ host: 'harness.example' }, '/private/settings/read', request), missing.response)
+    expect(missing.state.status).toBe(403)
+    const authenticated = fakeResponse()
+    await route.handler(fakePost({
+      host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE,
+    }, '/private/settings/read', request), authenticated.response)
+    expect(authenticated.state.status).toBe(200)
+    const loopback = fakeResponse()
+    await route.handler(fakePost({ host: '127.0.0.1:3080' }, '/private/settings/read', request), loopback.response)
+    expect(loopback.state.status).toBe(200)
+    expect(calls).toEqual(['settings/read', 'settings/read'])
+    await remove()
     await dispose()
   })
 
@@ -264,7 +461,10 @@ describe('connection node half', () => {
     const routes: WebRoute[] = []
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     ctx.provide('apiProxy', {} as unknown as ApiProxy)
-    const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
+    const fiber = ctx.plugin({ inject: [...inject], apply }, {
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+    })
     await fiber.await()
     const connection = ctx.get('connection') as HostConnectionHandle
     const calls: unknown[] = []
@@ -330,11 +530,52 @@ describe('connection node half', () => {
       async () => ({ ok: true, value: null }),
       { authority: 'loopback' },
     )
-    const loopbackOnly = fakeResponse()
-    await route.handler(fakePost({ host: 'harness.example' }, '/api/goals/create', request), loopbackOnly.response)
-    expect(loopbackOnly.state.status).toBe(403)
+    const elevated = fakeResponse()
+    await route.handler(fakePost({
+      host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE,
+    }, '/api/goals/create', request), elevated.response)
+    expect(elevated.state.status).toBe(200)
+    expect(JSON.parse(String(elevated.state.body))).toMatchObject({
+      rpcId: 'rpc-shared',
+      result: { ok: true },
+    })
     await removeLoopback()
     await fiber.dispose()
+  })
+
+  it('keeps shared loopback RPC authority local when no token is configured', async () => {
+    const { routes, connection, dispose } = await mounted({ trustedHosts: ['harness.example'] })
+    const calls: string[] = []
+    const remove = connection.rpc.intercept(
+      '/api',
+      endpoint => endpoint === 'settings/read',
+      async (endpoint) => {
+        calls.push(endpoint)
+        return { ok: true, value: null }
+      },
+      { authority: 'loopback' },
+    )
+    const route = routes.find(candidate => candidate.path === API_PATH)!
+    const request: ClientRequest = {
+      type: 'client-request',
+      rpcId: RpcId('rpc-local-only'),
+      method: 'settings/read',
+      payload: {},
+    }
+
+    const remote = fakeResponse()
+    await route.handler(fakePost({
+      host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE,
+    }, '/api/settings/read', request), remote.response)
+    expect(remote.state.status).toBe(403)
+    const loopback = fakeResponse()
+    await route.handler(fakePost({
+      host: '127.0.0.1:3080', cookie: REMOTE_ACCESS_COOKIE,
+    }, '/api/settings/read', request), loopback.response)
+    expect(loopback.state.status).toBe(200)
+    expect(calls).toEqual(['settings/read'])
+    await remove()
+    await dispose()
   })
 
   it('applies the configured trust fence and JSON envelope checks to generic channels', async () => {
@@ -409,7 +650,9 @@ describe('connection node half', () => {
     })
     const loopbackRoute = routes.find(candidate => candidate.path === '/loopback')!
     const publicResponse = fakeResponse()
-    await loopbackRoute.handler(fakePost({ host: 'harness.example' }, '/loopback/read', {
+    await loopbackRoute.handler(fakePost({
+      host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE,
+    }, '/loopback/read', {
       type: 'client-request', rpcId: 'rpc-public', method: 'read', payload: {},
     }), publicResponse.response)
     expect(publicResponse.state.status).toBe(403)
@@ -439,10 +682,16 @@ describe('connection node half over a real HTTP server', () => {
   }
 
   /** One real request; `host` spoofs the authority the way a LAN client's browser would send it. */
-  function call(port: number, method: string, host: string): Promise<number> {
+  function call(port: number, method: string, host: string, cookie?: string): Promise<number> {
     return new Promise((resolve, reject) => {
       const request = httpRequest(
-        { host: '127.0.0.1', port, path: `${API_PATH}/${method}`, method: 'GET', headers: { host } },
+        {
+          host: '127.0.0.1',
+          port,
+          path: `${API_PATH}/${method}`,
+          method: 'GET',
+          headers: { host, ...cookie === undefined ? {} : { cookie } },
+        },
         (response) => {
           response.resume()
           response.on('end', () => { resolve(response.statusCode ?? 0) })
@@ -487,6 +736,22 @@ describe('connection node half over a real HTTP server', () => {
       }
       // Loopback reaches everything, configuration included.
       expect(await call(port, 'settings.describe', `127.0.0.1:${String(port)}`)).toBe(404)
+    } finally {
+      await close()
+      await dispose()
+    }
+  })
+
+  it('refuses a token-authenticated native chooser over real HTTP', async () => {
+    const { routes, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+    })
+    const { port, close } = await serve(routes)
+    try {
+      expect(await call(port, 'host.pickDirectory', 'harness.example', REMOTE_ACCESS_COOKIE)).toBe(403)
+      expect(await call(port, 'settings.describe', 'harness.example', REMOTE_ACCESS_COOKIE)).toBe(404)
+      expect(await call(port, 'host.pickDirectory', `127.0.0.1:${String(port)}`)).toBe(404)
     } finally {
       await close()
       await dispose()

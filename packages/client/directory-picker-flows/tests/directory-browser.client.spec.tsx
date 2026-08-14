@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { DirectoryListing } from '@deepseek-ai/dsh-client-runtime/client'
 import { DirectoryBrowseError } from '@deepseek-ai/dsh-client-runtime/client'
-import { DirectoryBrowser } from '../src/client/DirectoryBrowser.tsx'
+import { DirectoryBrowser } from '../src/DirectoryBrowser.tsx'
 
 afterEach(cleanup)
 

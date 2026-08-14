@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const appDir = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = resolve(appDir, '..', '..')
+const appManifest = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
 
 function childDirectories(parent) {
   return readdirSync(parent, { withFileTypes: true })
@@ -31,7 +32,9 @@ const workspacePackages = new Map(workspacePackageDirectories().map((dir) => {
 
 function runtimeWorkspacePackages() {
   const selected = new Set()
-  const pending = ['@deepseek-ai/dsh', '@deepseek-ai/cordis-plugin-group']
+  const pending = Object.entries(appManifest.dependencies ?? {})
+    .filter(([, version]) => typeof version === 'string' && version.startsWith('workspace:'))
+    .map(([name]) => name)
   while (pending.length > 0) {
     const name = pending.pop()
     if (name === undefined || selected.has(name)) continue
@@ -57,18 +60,32 @@ const workspaceRuntime = runtimeWorkspacePackages().map(({ dir, manifest }) => (
   filter: packageFilter(manifest.files),
 }))
 
+const legalResources = {
+  from: 'legal',
+  to: 'legal',
+  filter: ['**/*'],
+}
+
 export default {
   appId: 'ai.deepseek.harness',
   artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',
   asar: false,
+  detectUpdateChannel: false,
   npmRebuild: false,
   directories: { output: '../../dist/electron' },
   files: ['lib/*.js', 'resources/*.yml', 'package.json'],
-  extraResources: workspaceRuntime,
+  extraResources: [...workspaceRuntime, legalResources],
+  publish: {
+    provider: 'generic',
+    url: 'https://application-1305333896.cos.ap-guangzhou.myqcloud.com/',
+  },
   mac: {
     category: 'public.app-category.developer-tools',
     icon: 'build/icon.png',
-    target: [{ target: 'dmg', arch: ['arm64'] }],
+    target: [
+      { target: 'dmg', arch: ['arm64'] },
+      { target: 'zip', arch: ['arm64'] },
+    ],
   },
   dmg: {
     title: 'DeepSeek Harness ${version}',

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-electron-token-host-authority.md
+2026-08-14-electron-token-host-authority.md: 380ab9c9e091174019eddd341b7f002fd03f78ce
+2026-08-14-electron-token-host-authority.zh.md: d48642e8ec963e0b5ba0fa0a096e440bd9259a2f

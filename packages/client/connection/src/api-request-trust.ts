@@ -9,12 +9,16 @@
  * still be a rebound browser read and Host is the one header rebinding cannot
  * forge. Non-browser and remote clients pass the same fence via loopback,
  * deployment-derived LAN IP literals, or a declared `trustedHosts` authority.
- * Network reachability and authentication stay out of scope: binding policy
- * belongs to the webserver config, and this fence is not an auth layer.
+ * Network reachability stays in the webserver config. The Node entry also
+ * requires a loopback Host to arrive from a loopback TCP peer, because raw
+ * clients can choose Host freely. This authority fence may additionally require
+ * shared session-cookie proof from trusted non-loopback Hosts.
  */
 
-import type { IncomingHttpHeaders } from 'node:http'
+import { timingSafeEqual } from 'node:crypto'
+import type { IncomingHttpHeaders, IncomingMessage } from 'node:http'
 import { isLoopbackHostname } from './loopback-hostname.ts'
+import { REMOTE_ACCESS_COOKIE_NAME } from './remote-access.ts'
 
 /** The request facts the fence reads from either HTTP representation. */
 interface ApiTrustRequest {
@@ -87,13 +91,46 @@ function isTrustedAuthority(hostUrl: URL, trustedHosts: readonly string[]): bool
   })
 }
 
+function hasRemoteAccessCookie(
+  request: ApiTrustRequest,
+  remoteAccessToken: string,
+): boolean {
+  const cookie = header(request.headers, 'cookie')
+  if (cookie === undefined) return false
+  const values = cookie.split(';').flatMap((part) => {
+    const separator = part.indexOf('=')
+    if (separator === -1 || part.slice(0, separator).trim() !== REMOTE_ACCESS_COOKIE_NAME) return []
+    return [part.slice(separator + 1).trim()]
+  })
+  const [actualValue] = values
+  if (values.length !== 1 || actualValue === undefined) return false
+  const expected = Buffer.from(encodeURIComponent(remoteAccessToken))
+  const actual = Buffer.from(actualValue)
+  return actual.length === expected.length && timingSafeEqual(actual, expected)
+}
+
+/**
+ * Classify the TCP peer of a Node request.
+ */
+function isLoopbackPeer(request: IncomingMessage): boolean {
+  const address = request.socket.remoteAddress
+  if (address === undefined) return false
+  if (address === '::1') return true
+  return isLoopbackHostname(address.startsWith('::ffff:') ? address.slice(7) : address)
+}
+
 /**
  * Decide whether one /api request may reach the RPC bridge.
- * @param request - Node HTTP or Fetch request facts (headers).
+ * @param request - HTTP request facts after any Node-carrier peer check.
  * @param trustedHosts - non-loopback authorities this deployment serves: exact `host:port`, or port-less `host` matching any port.
+ * @param remoteAccessToken - optional proof required from trusted non-loopback authorities.
  * @returns true when the Host is ours (loopback or trusted) and any attached browser markers are same-origin.
  */
-export function isTrustedApiRequest(request: ApiTrustRequest, trustedHosts: readonly string[]): boolean {
+export function isTrustedApiRequest(
+  request: ApiTrustRequest,
+  trustedHosts: readonly string[],
+  remoteAccessToken?: string,
+): boolean {
   // Host fence (DNS-rebinding defense), applied to every request: the browser
   // fills Host from the URL it believes it is talking to, so a rebound page
   // carries the attacker's domain here even though the socket lands on this
@@ -105,7 +142,9 @@ export function isTrustedApiRequest(request: ApiTrustRequest, trustedHosts: read
   if (host === undefined) return false
   const hostUrl = parseAuthority(host)
   if (hostUrl === undefined) return false
-  if (!isLoopbackHostname(hostUrl.hostname) && !isTrustedAuthority(hostUrl, trustedHosts)) return false
+  const loopback = isLoopbackHostname(hostUrl.hostname)
+  if (!loopback && !isTrustedAuthority(hostUrl, trustedHosts)) return false
+  if (!loopback && remoteAccessToken !== undefined && !hasRemoteAccessCookie(request, remoteAccessToken)) return false
   // Cross-site fence: modern browsers label the initiator relationship on
   // every fetch; an explicit cross-site marker is refused regardless of Origin.
   if (header(request.headers, 'sec-fetch-site') === 'cross-site') return false
@@ -120,4 +159,26 @@ export function isTrustedApiRequest(request: ApiTrustRequest, trustedHosts: read
   } catch {
     return false
   }
+}
+
+/**
+ * Decide whether a Node HTTP request may cross into a Fetch bridge or WebSocket handler.
+ * A loopback Host is privileged only when the TCP peer is also loopback; this
+ * rejects raw LAN clients that forge Host before the bridge drops socket facts.
+ * @param request - original Node request carrying the TCP peer address.
+ * @param trustedHosts - non-loopback authorities this deployment serves.
+ * @param remoteAccessToken - optional proof required from trusted non-loopback authorities.
+ * @returns true when both the HTTP trust checks and Node-carrier peer check pass.
+ */
+export function isTrustedNodeApiRequest(
+  request: IncomingMessage,
+  trustedHosts: readonly string[],
+  remoteAccessToken?: string,
+): boolean {
+  if (!isTrustedApiRequest(request, trustedHosts, remoteAccessToken)) return false
+  const host = header(request.headers, 'host')
+  if (host === undefined) return false
+  const hostUrl = parseAuthority(host)
+  if (hostUrl === undefined) return false
+  return !isLoopbackHostname(hostUrl.hostname) || isLoopbackPeer(request)
 }

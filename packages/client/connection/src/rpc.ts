@@ -2,12 +2,16 @@
 
 import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
 
-/** Trust fence applied before a Host RPC channel reaches its handler. */
+/**
+ * Trust fence applied before a Host RPC channel reaches its handler.
+ * `loopback` also admits token-authenticated trusted Hosts when remote access
+ * is configured, but never elevates `trustedHosts` by itself.
+ */
 export type ConnectionRpcAuthority = 'trusted-host' | 'loopback'
 
 /** Registration policy for one logical RPC channel. */
 export interface ConnectionRpcHandlerOptions {
-  /** Browser authority accepted by every endpoint in this channel. */
+  /** Browser authority and configured remote-access policy accepted by every endpoint in this channel. */
   readonly authority: ConnectionRpcAuthority
 }
 
