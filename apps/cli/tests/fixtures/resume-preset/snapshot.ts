@@ -82,7 +82,8 @@ try {
       agent: handle.agent,
     })
     if (exported.isError) throw new Error(`DOCX snapshot export failed: ${JSON.stringify(exported.content)}`)
-    const docxTarget = await ctx.fs.resolve('resume.docx', { cwd: handle.agent.session.header.cwd })
+    const cwd = handle.agent.session.header.cwd
+    const docxTarget = await ctx.fs.resolve('resume.docx', cwd === undefined ? {} : { cwd })
     const docxBytes = await ctx.fs.readBytes(docxTarget, undefined, 5 * 1024 * 1024)
     const exportValue = exported.value as { operation: string }
     process.stdout.write(`${JSON.stringify({
