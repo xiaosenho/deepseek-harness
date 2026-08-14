@@ -34,7 +34,7 @@ function commandError(exitCode: number, stderr = ''): CommandExitError {
 
 class FakeRemote {
   readonly nodes = new Map<string, RemoteNode>()
-  readonly writes: Array<{ path: string; data: string; metadata?: Record<string, string> }> = []
+  readonly writes: Array<{ path: string; data: string | ArrayBuffer; metadata?: Record<string, string> }> = []
   readonly writeParentModes: number[] = []
   readonly renames: Array<{ from: string; to: string }> = []
   readonly links: Array<{ from: string; to: string }> = []
@@ -189,14 +189,14 @@ class FakeRemote {
           .filter(candidate => candidate !== path && dirname(candidate) === path)
           .map(candidate => this.rawInfo(candidate))
       },
-      write: async (path: string, data: string, options?: { metadata?: Record<string, string>; signal?: AbortSignal }): Promise<object> => {
+      write: async (path: string, data: string | ArrayBuffer, options?: { metadata?: Record<string, string>; signal?: AbortSignal }): Promise<object> => {
         this.checkAbort(options)
         const parent = dirname(path)
         if (!this.nodes.has(parent)) this.dir(parent)
         this.writeParentModes.push(this.required(parent).mode)
         this.nodes.set(path, {
           type: FileType.FILE,
-          data: bytes(data),
+          data: typeof data === 'string' ? bytes(data) : new Uint8Array(data),
           mode: 0o644,
           modified: this.clock++,
           ...(options?.metadata !== undefined ? { metadata: { ...options.metadata } } : {}),
@@ -547,6 +547,16 @@ describe('E2BFileSystem atomic writes and edits', () => {
     expect(posix.dirname(stagingDirectory)).toBe('/workspace')
     expect(remote.removals).toContain(stagingDirectory)
     await expect(fs.stat(target)).resolves.toMatchObject({ version: outcome.version, size: 14 })
+  })
+
+  it('publishes binary bytes without text conversion', async () => {
+    const { fs, remote } = await setup()
+    const content = Uint8Array.from([0x50, 0x4b, 0x00, 0xff])
+
+    const outcome = await fs.writeBytes(await fs.resolve('resume.docx'), content, { kind: 'createIfAbsent' })
+
+    expect(outcome).toMatchObject({ operation: 'create', bytes: 4 })
+    expect(remote.nodes.get('/workspace/resume.docx')?.data).toEqual(content)
   })
 
   it('preserves replacement mode, normalizes only CRLF for diffs, and changes version on external writes', async () => {
