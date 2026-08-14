@@ -34,6 +34,10 @@ pnpm run build
 pnpm dsh web
 ```
 
+### 桌面应用
+
+自包含 Electron 应用会启动同一套 Web UI，并为 macOS 和 Windows 打包本地运行时。开发、打包、平台限制和未签名 macOS 测试包说明见 [Electron 桌面应用指南](apps/electron/README.md)。
+
 ## 社区与支持
 
 - 欢迎通过 [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 提交反馈或 bug 报告。

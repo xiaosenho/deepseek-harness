@@ -34,6 +34,10 @@ pnpm run build
 pnpm dsh web
 ```
 
+### Desktop application
+
+The self-contained Electron application starts the same Web UI and packages its local runtime for macOS and Windows. See the [Electron desktop application guide](apps/electron/README.md) for development, packaging, platform limitations, and unsigned macOS test-build instructions.
+
 ## Community and support
 
 - Feel free to submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).

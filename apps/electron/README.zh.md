@@ -38,6 +38,19 @@ pnpm run dist:electron:win
 
 输出位于 `dist/electron/`。两个平台均使用 DeepSeek Harness 产品图标。Windows 安装程序提供安装目录选择，并创建桌面和开始菜单快捷方式。安装后的应用不要求目标机器具备 Harness 代码检出目录、Node.js 或 pnpm。签名、macOS 公证和发布仍属于发布工作。
 
+### 未签名 macOS 测试包
+
+在配置发布签名和公证之前，macOS DMG 是 ARM64 测试包。接收者将 `DeepSeek Harness.app` 从 DMG 复制到 `/Applications` 后，如果确认该包可信，可以移除下载隔离属性、应用本地 ad-hoc 签名并启动应用：
+
+```sh
+uname -m
+sudo xattr -cr "/Applications/DeepSeek Harness.app"
+sudo codesign --force --deep --sign - "/Applications/DeepSeek Harness.app"
+open "/Applications/DeepSeek Harness.app"
+```
+
+`uname -m` 必须输出 `arm64`；该构建不能在 Intel Mac 上运行。这些命令会为当前本地副本绕过“门禁”的已下载应用保护，只能用于接收者信任其来源和校验和的安装包。公开分发仍需 Developer ID 签名和 Apple 公证。
+
 Windows 桌面应用使用应用内目录浏览器。原生 Win32 目录选择器依赖 Koffi/COM worker，该 worker 与打包后的 Electron Node 运行时不兼容。macOS 和 Linux 继续使用 Web profile 的自适应原生目录选择器。
 
 在 Apple Silicon 上交叉构建 Windows 安装程序需要 Rosetta 2，因为 electron-builder 内置的 NSIS 编译器是 x86_64 macOS 可执行文件。工作区会安装打包 Harness 运行时所需的 Windows x64 可选原生依赖。

@@ -38,6 +38,19 @@ pnpm run dist:electron:win
 
 Outputs land under `dist/electron/`. Both platforms use the DeepSeek Harness product icon. The Windows installer provides an installation-directory step plus desktop and Start menu shortcuts. The installed application does not require a Harness checkout, Node.js, or pnpm on the target machine. Signing, macOS notarization, and publishing remain release work.
 
+### Unsigned macOS test builds
+
+The macOS DMG is an ARM64 test build until release signing and notarization are configured. After copying `DeepSeek Harness.app` from the DMG into `/Applications`, a recipient who trusts the package can remove its download quarantine, apply a local ad-hoc signature, and launch it:
+
+```sh
+uname -m
+sudo xattr -cr "/Applications/DeepSeek Harness.app"
+sudo codesign --force --deep --sign - "/Applications/DeepSeek Harness.app"
+open "/Applications/DeepSeek Harness.app"
+```
+
+`uname -m` must print `arm64`; this build does not run on Intel Macs. These commands bypass Gatekeeper's downloaded-app protection for this local copy and must only be used for a package whose source and checksum the recipient trusts. They do not replace Developer ID signing and Apple notarization for public distribution.
+
 The Windows desktop application uses the in-app directory browser. The native Win32 picker depends on a Koffi/COM worker that is not compatible with the packaged Electron Node runtime. macOS and Linux retain the Web profile's adaptive native picker.
 
 Cross-building the Windows installer on Apple Silicon requires Rosetta 2 because electron-builder's bundled NSIS compiler is an x86_64 macOS executable. The workspace installs the Windows x64 optional native dependencies needed by the packaged Harness runtime.
