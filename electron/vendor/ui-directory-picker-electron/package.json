@@ -41,6 +41,7 @@
     }
   },
   "scripts": {
+    "build": "tsc -b && tsdown",
     "bundle": "tsdown",
     "watch": "tsdown --watch"
   },
@@ -68,7 +69,10 @@
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "@types/react": "~18.3.1",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "typescript": "^6.0.3",
+    "tsdown": "^0.22.2",
+    "lightningcss": "^1.29.0"
   },
   "files": [
     "lib/index.js",

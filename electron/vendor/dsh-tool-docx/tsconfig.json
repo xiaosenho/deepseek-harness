@@ -1,18 +1,11 @@
 {
-  "extends": "../../../tsconfig.base.json",
+  "extends": "../../../deepseek-harness-web/tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "lib/types"
+    "outDir": "lib/types",
+    "paths": {}
   },
-  "include": ["src"],
-  "references": [
-    { "path": "../../../vendor/cordis" },
-    { "path": "../../../vendor/schemastery" },
-    { "path": "../../core/tools" },
-    { "path": "../../core/system-prompt" },
-    { "path": "../fs" },
-    { "path": "../../sandbox/sandbox-policy" },
-    { "path": "../../sandbox/sandbox" },
-    { "path": "../../runtime-diagnostics/invariants" }
+  "include": [
+    "src"
   ]
 }

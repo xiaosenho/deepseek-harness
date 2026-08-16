@@ -1,27 +1,14 @@
 {
-  "extends": "../../../tsconfig.base.json",
+  "extends": "../../../deepseek-harness-web/tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "lib/types",
     "types": [
       "node"
-    ]
+    ],
+    "paths": {}
   },
   "include": [
     "src"
-  ],
-  "references": [
-    {
-      "path": "../../util/brand"
-    },
-    {
-      "path": "../directory-picker"
-    },
-    {
-      "path": "../directory-picker-browse"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
-    }
   ]
 }

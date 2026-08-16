@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-tool-docx",
-  "description": "Model-facing DOCX resume exporter over the DeepSeek Harness filesystem seam",
+  "description": "Model-facing Markdown resume exporter over the DeepSeek Harness filesystem seam",
   "version": "0.1.0-rc.6",
   "publishConfig": {
     "access": "public"
@@ -31,8 +31,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^",
-    "docx": "9.7.1"
+    "@deepseek-ai/schemastery": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-fs": "workspace:^",
@@ -55,6 +54,11 @@
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "typescript": "^6.0.3",
+    "tsdown": "^0.22.2"
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown"
   }
 }

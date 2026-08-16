@@ -37,8 +37,7 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-host-directory-picker": "workspace:^",
-    "@deepseek-ai/dsh-host-directory-picker-browse": "workspace:^"
+    "@deepseek-ai/dsh-host-directory-picker": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-invariants": "workspace:^",
@@ -46,6 +45,11 @@
   },
   "devDependencies": {
     "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "typescript": "^6.0.3",
+    "tsdown": "^0.22.2"
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown"
   }
 }

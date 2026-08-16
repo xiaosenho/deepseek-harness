@@ -16,10 +16,11 @@
   "files": [
     "lib/*.cjs",
     "lib/*.js",
-    "resources/*.yml"
+    "resources/*.yml",
+    "resources/version.json"
   ],
   "scripts": {
-    "build": "tsc -b && tsdown",
+    "build": "\"$npm_execpath\" --filter @deepseek-ai/dsh-host-directory-picker-electron --filter @deepseek-ai/dsh-client-ui-directory-picker-electron --filter @deepseek-ai/dsh-client-ui-desktop-electron --filter @deepseek-ai/dsh-tool-docx --filter @deepseek-ai/dsh-client-directory-picker-flows run build && node scripts/gen-version-info.mjs && tsc -b && tsdown",
     "dev": "electron .",
     "test": "vitest run",
     "pack": "electron-builder --config electron-builder.config.mjs --dir",
@@ -54,6 +55,7 @@
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@types/node": "^22.20.0",
     "electron": "43.4.0",
+    "lightningcss": "^1.29.0",
     "electron-builder": "26.15.3",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
