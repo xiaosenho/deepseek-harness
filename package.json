@@ -7,10 +7,10 @@
   "scripts": {
     "postinstall": "lefthook install",
     "build": "pnpm run build:web-kernel && pnpm --filter @deepseek-ai/dsh-electron run build",
-    "build:web-kernel": "cd deepseek-harness-web && pnpm run build",
+    "build:web-kernel": "cd deepseek-harness-web && \"$npm_execpath\" install --no-frozen-lockfile && \"$npm_execpath\" run build",
     "dev:electron": "pnpm --filter @deepseek-ai/dsh-electron run dev",
     "test": "pnpm --filter @deepseek-ai/dsh-electron run test",
-    "test:web-kernel": "cd deepseek-harness-web && pnpm run test",
+    "test:web-kernel": "cd deepseek-harness-web && \"$npm_execpath\" run test",
     "pack:electron": "pnpm run build && pnpm --filter @deepseek-ai/dsh-electron run pack",
     "dist:electron": "pnpm run build && pnpm --filter @deepseek-ai/dsh-electron run dist",
     "dist:electron:mac": "pnpm run build && pnpm --filter @deepseek-ai/dsh-electron run dist:mac",
@@ -23,6 +23,9 @@
     "@deepseek-ai/dsh-client-ui-directory-picker-electron": "workspace:^",
     "@deepseek-ai/dsh-host-directory-picker-electron": "workspace:^",
     "@deepseek-ai/dsh-tool-docx": "workspace:^"
+  },
+  "devDependencies": {
+    "lefthook": "^2.1.9"
   },
   "packageManager": "pnpm@11.7.0",
   "engines": {

@@ -1,8 +1,11 @@
 node_modules/
 lib/
 dist/
+electron/resources/version.json
 *.tsbuildinfo
 *.log
 .tools/
 .pnpm-store/
+.corepack/
+.pnpm-home/
 .DS_Store
