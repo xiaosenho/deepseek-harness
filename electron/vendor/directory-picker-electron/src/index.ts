@@ -9,10 +9,11 @@
 import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type {
-  DirectoryPickerBrowseCapability, DirectoryPickerCapability, DirectoryPickerNativeBrowseCapability,
+import {
+  DirectoryPicker,
+  type DirectoryPickerCapability,
+  type DirectoryPickerNativeCapability,
 } from '@deepseek-ai/dsh-host-directory-picker'
-import BrowseDirectoryPicker from '@deepseek-ai/dsh-host-directory-picker-browse'
 import {
   electronDirectoryPickerRequestId, isElectronDirectoryPickerParentMessage,
 } from './protocol.ts'
@@ -30,12 +31,6 @@ export {
   electronDirectoryPickerRequestId, isElectronDirectoryPickerChildMessage,
   isElectronDirectoryPickerParentMessage,
 } from './protocol.ts'
-
-/** Validated Electron directory-picker configuration. */
-export interface Config {
-  /** Complete-result bound for one filesystem listing level; minimum 1, default 1000. */
-  maxEntries: number
-}
 
 /** Minimal child-process IPC operations owned by this provider. */
 export interface ElectronDirectoryPickerIpcPort {
@@ -118,33 +113,27 @@ export function createProcessElectronDirectoryPickerPort(): ElectronDirectoryPic
   }
 }
 
-/** The `ctx.directoryPicker` native-plus-browse implementation for Electron. */
-export default class ElectronDirectoryPicker extends BrowseDirectoryPicker {
-  private readonly electronCapability: DirectoryPickerNativeBrowseCapability
+/** The `ctx.directoryPicker` native implementation for Electron: one OS dialog per pick. */
+export default class ElectronDirectoryPicker extends DirectoryPicker {
+  private readonly nativeCapability: DirectoryPickerNativeCapability
   private readonly pending = new Map<ElectronDirectoryPickerRequestId, PendingPick>()
   private unavailable: Error | undefined
 
   /**
    * @param ctx - Cordis context that owns the service and IPC listeners.
-   * @param config - browse backend limits inherited by the filesystem interaction.
    * @param internals - non-serializable IPC and id hooks for tests.
    */
-  constructor(ctx: Context, config: Config, internals: ElectronDirectoryPickerInternals = {}) {
-    super(ctx, config)
-    // The concrete superclass always returns its browse implementation; its
-    // public override keeps the wider seam union for callers.
-    const browse = super.capability() as DirectoryPickerBrowseCapability
+  constructor(ctx: Context, internals: ElectronDirectoryPickerInternals = {}) {
+    super(ctx)
     const port = internals.port ?? createProcessElectronDirectoryPickerPort()
     if (!port.connected) {
       throw new Error('directory-picker-electron: the Electron parent IPC channel is disconnected')
     }
     const nextRequestId = internals.requestId
       ?? (() => electronDirectoryPickerRequestId(randomUUID()))
-    this.electronCapability = {
-      kind: 'native-browse',
+    this.nativeCapability = {
+      kind: 'native',
       pick: signal => this.pick(port, nextRequestId, signal),
-      list: (path, signal) => browse.list(path, signal),
-      createDirectory: (path, name) => browse.createDirectory(path, name),
     }
 
     ctx.effect(() => {
@@ -164,10 +153,10 @@ export default class ElectronDirectoryPicker extends BrowseDirectoryPicker {
 
   /**
    * The Electron interaction capability.
-   * @returns the stable native-plus-browse capability object.
+   * @returns the stable native dialog capability object.
    */
   override capability(): DirectoryPickerCapability {
-    return this.electronCapability
+    return this.nativeCapability
   }
 
   /** Dispatch one strictly validated parent response to its pending request. */

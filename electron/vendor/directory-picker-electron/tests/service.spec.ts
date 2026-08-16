@@ -1,15 +1,12 @@
 /** Behavior of the Electron parent-IPC provider and inherited filesystem browser. */
 
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import type { Context as ContextType } from '@deepseek-ai/cordis'
 import { Context } from '@deepseek-ai/cordis'
-import type { DirectoryPickerNativeBrowseCapability } from '@deepseek-ai/dsh-host-directory-picker'
+import type { DirectoryPickerNativeCapability } from '@deepseek-ai/dsh-host-directory-picker'
 import { afterEach, describe, expect, it } from 'vitest'
 import ElectronDirectoryPicker, { createProcessElectronDirectoryPickerPort } from '../src/index.ts'
 import type {
-  Config, ElectronDirectoryPickerChildMessage, ElectronDirectoryPickerInternals,
+  ElectronDirectoryPickerChildMessage, ElectronDirectoryPickerInternals,
   ElectronDirectoryPickerIpcPort, ElectronDirectoryPickerRequestId,
 } from '../src/index.ts'
 import { electronDirectoryPickerRequestId } from '../src/index.ts'
@@ -102,14 +99,14 @@ async function harness(
   port: FakePort,
   requestId: (() => ElectronDirectoryPickerRequestId) | null = ids('pick-1'),
 ): Promise<{
-  capability: DirectoryPickerNativeBrowseCapability
+  capability: DirectoryPickerNativeCapability
   ctx: Context
   fiber: ReturnType<Context['plugin']>
 }> {
   const internals: ElectronDirectoryPickerInternals = requestId === null ? { port } : { port, requestId }
   class TestElectronDirectoryPicker extends ElectronDirectoryPicker {
-    constructor(ctx: ContextType, config: Config) {
-      super(ctx, config, internals)
+    constructor(ctx: ContextType) {
+      super(ctx, internals)
     }
   }
   const ctx = new Context()
@@ -117,7 +114,7 @@ async function harness(
   const fiber = ctx.plugin(TestElectronDirectoryPicker)
   await fiber.await()
   const capability = ctx.get('directoryPicker')!.capability()
-  if (capability.kind !== 'native-browse') throw new Error('Electron provider must advertise native-browse')
+  if (capability.kind !== 'native') throw new Error('Electron provider must advertise native')
   return { capability, ctx, fiber }
 }
 
@@ -151,35 +148,25 @@ describe('ElectronDirectoryPicker', () => {
     const fakeProcess = installFakeProcessIpc()
     try {
       class DefaultPortPicker extends ElectronDirectoryPicker {
-        constructor(ctx: ContextType, config: Config) {
-          super(ctx, config, { requestId: ids('default-process-port') })
+        constructor(ctx: ContextType) {
+          super(ctx, { requestId: ids('default-process-port') })
         }
       }
       const ctx = new Context()
       contexts.push(ctx)
       const fiber = ctx.plugin(DefaultPortPicker)
       await fiber.await()
-      expect(ctx.directoryPicker.capability().kind).toBe('native-browse')
+      expect(ctx.directoryPicker.capability().kind).toBe('native')
       await fiber.dispose()
     } finally {
       fakeProcess.restore()
     }
   })
 
-  it('provides a stable combined capability and retains native filesystem browsing', async () => {
+  it('provides a stable native capability and requests one OS dialog per pick', async () => {
     const port = new FakePort()
     const { capability, ctx } = await harness(port)
     expect(ctx.directoryPicker.capability()).toBe(capability)
-
-    const root = await mkdtemp(join(tmpdir(), 'dsh-electron-picker-'))
-    try {
-      await mkdir(join(root, 'existing'))
-      await capability.createDirectory(root, 'created')
-      const listing = await capability.list(root)
-      expect(listing.entries.map(entry => entry.name)).toEqual(['created', 'existing'])
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
 
     const picked = capability.pick(new AbortController().signal)
     expect(port.sent).toEqual([{
@@ -344,8 +331,8 @@ describe('ElectronDirectoryPicker', () => {
     port.connected = false
     const internals: ElectronDirectoryPickerInternals = { port }
     class DisconnectedPicker extends ElectronDirectoryPicker {
-      constructor(ctx: ContextType, config: Config) {
-        super(ctx, config, internals)
+      constructor(ctx: ContextType) {
+        super(ctx, internals)
       }
     }
     const ctx = new Context()

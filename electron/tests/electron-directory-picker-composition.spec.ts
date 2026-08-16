@@ -122,6 +122,6 @@ describe('Electron directory-picker real Loader composition', () => {
     expect(entries.get('ui-directory-picker-electron')?.fiber).toBeDefined()
     expect(new Set(imports)).toEqual(new Set([HOST, CLIENT]))
     expect(context.get('directoryPicker')).toBeInstanceOf(ElectronDirectoryPicker)
-    expect(context.directoryPicker.capability().kind).toBe('native-browse')
+    expect(context.directoryPicker.capability().kind).toBe('native')
   })
 })
