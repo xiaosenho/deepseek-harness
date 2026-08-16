@@ -1,4 +1,4 @@
-/** Electron-managed WebUI settings and update notification contributions. */
+/** Electron-managed WebUI settings contributions. */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -8,7 +8,6 @@ import type { DesktopControlInjected } from './contract.ts'
 import { DesktopControlController, resolveElectronDesktopBridge } from './desktop-controller.ts'
 import { RemoteAccessSection } from './RemoteAccessSection.tsx'
 import { SoftwareInfoItem } from './SoftwareInfoItem.tsx'
-import { UpdateBadge } from './UpdateBadge.tsx'
 import { en, zh, type DesktopElectronLocaleKey } from './locales.ts'
 
 export type { ElectronDesktopBridge, ElectronDesktopState } from '../bridge-contract.ts'
@@ -23,7 +22,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 const NS = 'desktop.electron'
 
-/** Services required by the three Electron-only slot contributions. */
+/** Services required by the Electron-only slot contributions. */
 export const inject = ['slots', 'locale']
 
 /** Register desktop controls only when the narrow Electron preload is present. */
@@ -47,6 +46,7 @@ export function apply(ctx: ClientContext): void {
     copyRemoteAccessUrl: () => controller.copyRemoteAccessUrl(),
     checkForUpdates: () => controller.checkForUpdates(),
     installUpdate: () => controller.installUpdate(),
+    checkWebKernelUpdate: () => controller.checkWebKernelUpdate(),
   })
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
@@ -64,11 +64,4 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: injected,
   }, SoftwareInfoItem))
-  ctx.slots.inject('sidebar.brand.badge', () => ctx.slots.register({
-    name: 'sidebar.brand.badge',
-    id: 'desktop-update',
-    order: 0,
-    locale: NS,
-    inject: injected,
-  }, UpdateBadge))
 }
