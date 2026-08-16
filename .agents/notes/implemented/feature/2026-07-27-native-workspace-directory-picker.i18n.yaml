@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-27-native-workspace-directory-picker.md
-2026-07-27-native-workspace-directory-picker.md: fbfc80ad272e73805a44c69f11055fd44ae35128
-2026-07-27-native-workspace-directory-picker.zh.md: e1edb3e0111d2a10ba7cbda7d228e0195dbec8f8
