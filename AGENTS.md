@@ -129,6 +129,16 @@ Real-API tests and demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, 
 - TODO markers: `FIXME`/`TODO`/`XXX` by urgency ([semantics](docs/development.md)).
 - Files end with exactly one trailing newline; `git diff --cached --check` (pre-commit) gates it.
 
+## Web-kernel fork features (接入方案)
+
+This repository is an Electron shell over the DeepSeek Harness Web kernel; the kernel lives in the `deepseek-harness-web/` git submodule pinned to upstream `deepseek-ai/deepseek-harness` and is read-only. Fork-only Web features that upstream does not ship keep working through three layers:
+
+1. **Code — `electron/vendor/`.** Fork-only packages live here as root-workspace members: `dsh-tool-docx`, the desktop-UI packages (`dsh-client-ui-desktop-electron`, `dsh-host-directory-picker-electron`, `dsh-client-ui-directory-picker-electron`), and the resume agent preset (composition + skills). The root pnpm workspace mounts `electron/*`, `electron/vendor/*`, and `deepseek-harness-web/packages/*/*` (plus the submodule's `apps/*`, `website`, `examples`) as one store, so the Web-kernel process resolves vendor packages through `workspace:^` exactly like upstream packages.
+2. **Mount — overlay patches.** `electron/resources/*.cordis.patch.yml` compose fork features into the Web profile at launch (`dsh web --patch <overlay>`). Patches mount new plugins through `insert` entries (`- insert: [{ id: tool-docx, name: '@deepseek-ai/dsh-tool-docx' }]`) and override config rows by id. The resume preset's composition rides the same mechanism.
+3. **Contract — the update seam.** An upstream bump touches only the submodule pointer, `workspace:^` re-linking, and overlay rows. A patch whose target row is absent warns and is skipped, so a vanished plugin id degrades to a warning, not a hard failure. Vendor packages depend only on upstream workspace packages; when upstream refactors an API, adapt in the shell or vendor package, never in the submodule.
+
+Rules: never edit `deepseek-harness-web/` sources; every new fork feature is a vendor package plus an overlay entry plus a shell dependency; bump the submodule pointer with `pnpm web-kernel:update` and pass the shell's CLI-contract tests before committing the bump.
+
 ## Defensive patterns
 
 Read [docs/defensive-patterns.md](docs/defensive-patterns.md) before lifecycle, concurrency, subprocess, or teardown work.
