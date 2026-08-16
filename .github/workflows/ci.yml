@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  shell:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install
+      - name: Build the pinned web kernel
+        run: pnpm run build:web-kernel
+      - name: Build the shell
+        run: pnpm --filter @deepseek-ai/dsh-electron run build
+      - name: Shell unit tests
+        run: pnpm --filter @deepseek-ai/dsh-electron run test
