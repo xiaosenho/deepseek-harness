@@ -1,24 +1,19 @@
 packages:
-  - vendor/*
-  - packages/*/*
-  # The Landlock launcher is developed with its harness consumers but keeps
-  # its native build and publication scripts under native/landlock-run.
-  - native/landlock-run
-  - native/landlock-run/packages/*
-  # Product assemblies over the package tier; apps/cli owns the `dsh` bin.
-  - apps/*
-  - website
-  # The runnable demo leaves join as ONE workspace member: examples/package.json
-  # declares the union of every leaf's cordis.yml plugins as workspace:*, so a
-  # plain-node (`:lib`) boot of any leaf (examples/<leaf>/cordis.yml) resolves its
-  # plugins through real package `exports`→lib by walking up to examples/node_modules.
-  # Members for DEPENDENCY RESOLUTION only — NOT build targets: tsdown's explicit
-  # globs (vendor/*, packages/*/*) exclude them. See examples/AGENTS.md and the archived
-  # run-ci-examples-from-built-lib Agent Note.
-  - examples
-  # Deploy root of the single-exe build: a pure dependency manifest whose
-  # closure is what the exe bundles and what the Python runtime distributes.
-  - python/sdk-runtime
+  # The desktop shell is the project's own package.
+  - electron
+  # Fork-only Web packages shipped with the shell (never upstream).
+  - electron/vendor/*
+  # The Web kernel lives in the deepseek-harness-web submodule (pinned upstream).
+  # Its packages join this workspace for DEPENDENCY RESOLUTION only, so
+  # `workspace:^` references from the shell and vendor packages resolve to the
+  # pinned upstream sources; the kernel itself builds inside the submodule.
+  - deepseek-harness-web/vendor/*
+  - deepseek-harness-web/packages/*/*
+  - deepseek-harness-web/native/landlock-run
+  - deepseek-harness-web/native/landlock-run/packages/*
+  - deepseek-harness-web/apps/*
+  - deepseek-harness-web/website
+  - deepseek-harness-web/examples
 
 # Vendored framework packages keep their upstream semver ranges, while local
 # builds must resolve those matching names to this workspace's pinned sources.
@@ -36,8 +31,8 @@ supportedArchitectures:
     - current
 
 overrides:
-  '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
-  '@deepseek-ai/schemastery': 'link:vendor/schemastery'
+  '@deepseek-ai/cosmokit': 'link:deepseek-harness-web/vendor/cosmokit'
+  '@deepseek-ai/schemastery': 'link:deepseek-harness-web/vendor/schemastery'
 
 peerDependencyRules:
   allowedVersions:
@@ -49,7 +44,7 @@ peerDependencyRules:
 # default and only allow scripts we need. esbuild (native binary) and lefthook
 # (git hooks) genuinely need theirs.
 allowBuilds:
-  # Electron's install script downloads the reviewed platform runtime used by apps/electron.
+  # Electron's install script downloads the reviewed platform runtime used by electron/.
   electron: true
   # The Windows installer selects the vendored 7-Zip executable for the current architecture.
   electron-winstaller: true
@@ -65,9 +60,9 @@ allowBuilds:
   node-addon-require-builtin: false
   # JSONL durability calls MoveFileExW with write-through publication on Windows.
   koffi: true
-  # The Python runtime deploy includes the reviewed workspace postinstall that
-  # restores the executable bit on node-pty's macOS spawn helper.
-  '@deepseek-ai/dsh-subprocess-local@file:packages/subprocess/subprocess-local': true
+  # The Web kernel's workspace postinstall restores the executable bit on
+  # node-pty's macOS spawn helper when the kernel closure is installed here.
+  '@deepseek-ai/dsh-subprocess-local@file:deepseek-harness-web/packages/subprocess/subprocess-local': true
 minimumReleaseAgeExclude:
   # Fresh pi-ai releases carry the model catalog updates that are the whole
   # point of bumping it; waiting out the release age would defeat that.

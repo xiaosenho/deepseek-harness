@@ -1,11 +1,12 @@
-/** Electron Builder assembly for the complete dsh workspace runtime. */
+/** Electron Builder assembly for the shell plus the pinned Web kernel closure. */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const appDir = dirname(fileURLToPath(import.meta.url))
-const workspaceRoot = resolve(appDir, '..', '..')
+const workspaceRoot = resolve(appDir, '..')
+const kernelRoot = join(workspaceRoot, 'deepseek-harness-web')
 const appManifest = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
 
 function childDirectories(parent) {
@@ -14,15 +15,18 @@ function childDirectories(parent) {
     .map(entry => join(parent, entry.name))
 }
 
+/** Every runtime workspace package: the shell's vendor/ plus the pinned kernel. */
 function workspacePackageDirectories() {
-  const apps = childDirectories(join(workspaceRoot, 'apps'))
-  const packages = childDirectories(join(workspaceRoot, 'packages')).flatMap(childDirectories)
-  const vendor = childDirectories(join(workspaceRoot, 'vendor'))
-  const native = childDirectories(join(workspaceRoot, 'native')).flatMap((dir) => {
+  const shellVendor = childDirectories(join(appDir, 'vendor'))
+  const kernelVendor = childDirectories(join(kernelRoot, 'vendor'))
+  const kernelPackages = childDirectories(join(kernelRoot, 'packages')).flatMap(childDirectories)
+  const kernelApps = childDirectories(join(kernelRoot, 'apps'))
+  const kernelNative = childDirectories(join(kernelRoot, 'native')).flatMap((dir) => {
     const nested = join(dir, 'packages')
     return [dir, ...existsSync(nested) ? childDirectories(nested) : []]
   })
-  return [...apps, ...packages, ...vendor, ...native].filter(dir => existsSync(join(dir, 'package.json')))
+  return [...shellVendor, ...kernelVendor, ...kernelPackages, ...kernelApps, ...kernelNative]
+    .filter(dir => existsSync(join(dir, 'package.json')))
 }
 
 const workspacePackages = new Map(workspacePackageDirectories().map((dir) => {

@@ -69,9 +69,9 @@ afterEach(async () => {
 })
 
 describe('Electron directory-picker real Loader composition', () => {
-  it('declares both overlay plugins in the Web profile bundle resolver', () => {
+  it('declares both overlay plugins in the shell dependency closure', () => {
     const manifest = JSON.parse(readFileSync(fileURLToPath(new URL(
-      '../../../packages/bundle/web-app/package.json',
+      '../package.json',
       import.meta.url,
     )), 'utf8')) as { dependencies: Record<string, string> }
     expect(manifest.dependencies[HOST]).toBe('workspace:^')
