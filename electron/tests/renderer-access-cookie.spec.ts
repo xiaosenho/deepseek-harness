@@ -1,8 +1,8 @@
 /** Authentication cookie owned by Electron main for the FRP loopback renderer. */
 
-import { REMOTE_ACCESS_COOKIE_NAME } from '@deepseek-ai/dsh-client-connection/remote-access'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  REMOTE_ACCESS_COOKIE_NAME,
   synchronizeRendererAccessCookie,
   type RendererCookieStore,
 } from '../src/renderer-access-cookie.ts'

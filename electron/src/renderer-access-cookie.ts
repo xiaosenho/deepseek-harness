@@ -1,7 +1,13 @@
 /** Main-owned authentication cookie for an FRP-protected loopback renderer. */
 
-import { REMOTE_ACCESS_COOKIE_NAME } from '@deepseek-ai/dsh-client-connection/remote-access'
 import type { Cookies } from 'electron/main'
+
+/**
+ * Session cookie name shared with the Web kernel's loopback access proof.
+ * Upstream does not export the constant, so the shell pins the same literal
+ * the kernel's remote-access module uses.
+ */
+export const REMOTE_ACCESS_COOKIE_NAME = 'dsh_remote_access'
 
 /** Cookie operations needed to authenticate the managed renderer. */
 export type RendererCookieStore = Pick<Cookies, 'remove' | 'set'>

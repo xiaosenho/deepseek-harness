@@ -15,6 +15,7 @@ const bridge: ElectronDesktopBridge = {
   copyRemoteAccessUrl: () => ipcRenderer.invoke(DESKTOP_BRIDGE_CHANNELS.copyRemoteAccess),
   checkForUpdates: () => ipcRenderer.invoke(DESKTOP_BRIDGE_CHANNELS.checkUpdates),
   installUpdate: () => ipcRenderer.invoke(DESKTOP_BRIDGE_CHANNELS.installUpdate),
+  checkWebKernelUpdate: () => ipcRenderer.invoke(DESKTOP_BRIDGE_CHANNELS.checkWebKernelUpdate),
 }
 
 contextBridge.exposeInMainWorld('dshElectron', bridge)

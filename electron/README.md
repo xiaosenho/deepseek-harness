@@ -18,6 +18,10 @@ Set `DSH_ELECTRON_URL` to an HTTP or HTTPS URL to skip the background command an
 
 Public FRP access uses an external `frpc` executable. The first run resolves `frpc` through Electron's inherited `PATH` unless `DSH_ELECTRON_FRPC_PATH` supplies a command name or absolute path; after remote-access preferences have been saved, the executable field in Settings is authoritative. LAN access does not require `frpc`.
 
+## About and Web-kernel updates
+
+The **About** surface (native panel plus the **Software information** card in Settings) shows the installed shell version and the Web-kernel commit pinned at build time (recorded in `resources/version.json` by `pnpm --filter @deepseek-ai/dsh-electron run build`). The card's **Check for kernel updates** action compares that pin against upstream `deepseek-ai/deepseek-harness` master through the GitHub API and reports current / update-available / failed; a failure never blocks startup. The update itself is a development action: `pnpm run web-kernel:update` fetches upstream, bumps the submodule pointer, rebuilds the kernel, and runs the shell tests.
+
 ## Automatic Updates
 
 An installed macOS application checks `https://ota.xiaosenho.top/api/collections/app_releases/records` after its first window is ready. The query selects the `macos` record with the greatest `version_code`; Electron still uses the record's SemVer `version` to decide whether it is newer than the installed application. Source runs never check for updates. Windows and Linux packaged builds also skip OTA until their distribution paths enforce an authenticated signing policy. `DSH_ELECTRON_OTA_URL` replaces the PocketBase base URL for a packaged macOS application, including one using `DSH_ELECTRON_URL` for its WebUI, but it does not change the trusted artifact root.

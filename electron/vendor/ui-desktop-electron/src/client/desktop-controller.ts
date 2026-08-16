@@ -57,7 +57,7 @@ function parsePublicEndpoint(value: unknown): string | undefined {
  */
 export function parseElectronDesktopState(value: unknown): ElectronDesktopState {
   const root = record(value, 'Electron desktop state')
-  exactKeys(root, ['currentVersion', 'remoteAccess', 'update'], 'Electron desktop state')
+  exactKeys(root, ['currentVersion', 'remoteAccess', 'update', 'webKernel'], 'Electron desktop state')
   if (typeof root.currentVersion !== 'string') throw new Error('Electron desktop version is invalid')
   const remote = record(root.remoteAccess, 'Electron remote-access state')
   exactKeys(remote, [
@@ -105,8 +105,35 @@ export function parseElectronDesktopState(value: unknown): ElectronDesktopState 
   } else {
     exactKeys(update, ['status'], 'Electron update state')
   }
+  const webKernel = record(root.webKernel, 'Electron web-kernel state')
+  exactKeys(webKernel, ['commit', 'update'], 'Electron web-kernel state')
+  if (typeof webKernel.commit !== 'string') throw new Error('Electron web-kernel commit is invalid')
+  const kernelUpdate = record(webKernel.update, 'Electron web-kernel update state')
+  const kernelStatuses = new Set([
+    'idle', 'checking', 'unknown', 'current', 'update-available', 'failed',
+  ])
+  if (typeof kernelUpdate.status !== 'string' || !kernelStatuses.has(kernelUpdate.status)) {
+    throw new Error('Electron web-kernel update status is invalid')
+  }
+  if (kernelUpdate.status === 'update-available') {
+    exactKeys(kernelUpdate, ['status', 'latestCommit'], 'Electron web-kernel update state')
+    if (typeof kernelUpdate.latestCommit !== 'string') {
+      throw new Error('Electron web-kernel update state is invalid')
+    }
+  } else if (kernelUpdate.status === 'failed') {
+    exactKeys(kernelUpdate, ['status', 'detail'], 'Electron web-kernel update state')
+    if (typeof kernelUpdate.detail !== 'string') {
+      throw new Error('Electron web-kernel update state is invalid')
+    }
+  } else {
+    exactKeys(kernelUpdate, ['status'], 'Electron web-kernel update state')
+  }
   return {
     currentVersion: root.currentVersion,
+    webKernel: {
+      commit: webKernel.commit,
+      update: kernelUpdate as ElectronDesktopState['webKernel']['update'],
+    },
     remoteAccess: {
       enabled: remote.enabled,
       preferredMode: remote.preferredMode,
@@ -144,6 +171,7 @@ export function resolveElectronDesktopBridge(value: unknown): ElectronDesktopBri
     && typeof candidate.copyRemoteAccessUrl === 'function'
     && typeof candidate.checkForUpdates === 'function'
     && typeof candidate.installUpdate === 'function'
+    && typeof candidate.checkWebKernelUpdate === 'function'
     ? candidate as ElectronDesktopBridge
     : undefined
 }
@@ -241,6 +269,15 @@ export class DesktopControlController {
    */
   installUpdate(): Promise<boolean> {
     return this.bridge.installUpdate()
+  }
+
+  /** Run an on-demand Web-kernel upstream check and adopt its returned state. */
+  async checkWebKernelUpdate(): Promise<void> {
+    await this.enqueue(async () => {
+      const value = parseElectronDesktopState(await this.bridge.checkWebKernelUpdate())
+      this.readSequence += 1
+      this.publish({ phase: 'ready', value })
+    })
   }
 
   private async refresh(): Promise<void> {

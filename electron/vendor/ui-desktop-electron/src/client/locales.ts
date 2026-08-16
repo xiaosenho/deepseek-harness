@@ -60,9 +60,15 @@ export const zh = {
   releaseNotes: '版本更新内容',
   checkUpdates: '检查更新',
   installUpdate: '安装并重启',
-  updateBadge: '发现新版本 {version}',
-  updateDialogTitle: '软件更新',
   close: '关闭',
+  kernelTitle: 'Web 内核',
+  kernelCommit: '内核提交',
+  kernelChecking: '正在检查内核更新…',
+  kernelCurrent: '内核已是最新版本',
+  kernelUpdateAvailable: '内核有更新可用（{commit}）',
+  kernelUpdateFailed: '内核更新检查失败',
+  kernelUnknown: '内核信息不可用',
+  checkKernelUpdates: '检查内核更新',
 } as const
 
 /** English desktop-control messages. */
@@ -127,9 +133,15 @@ export const en: Record<keyof typeof zh, string> = {
   releaseNotes: 'What’s new',
   checkUpdates: 'Check for updates',
   installUpdate: 'Install and restart',
-  updateBadge: 'Version {version} is available',
-  updateDialogTitle: 'Software update',
   close: 'Close',
+  kernelTitle: 'Web kernel',
+  kernelCommit: 'Kernel commit',
+  kernelChecking: 'Checking for kernel updates…',
+  kernelCurrent: 'The web kernel is up to date',
+  kernelUpdateAvailable: 'A kernel update is available ({commit})',
+  kernelUpdateFailed: 'The kernel update check failed',
+  kernelUnknown: 'Kernel information is unavailable',
+  checkKernelUpdates: 'Check for kernel updates',
 }
 
 /** Message keys supplied by the Electron desktop-control namespace. */

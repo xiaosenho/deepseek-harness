@@ -64,6 +64,20 @@ export type ElectronUpdateState =
   | { status: 'ready'; version: string; changelog: string }
   | { status: 'failed'; detail: string }
 
+/** JSON-safe web-kernel update state relative to upstream master. */
+export type ElectronWebKernelUpdateState =
+  | { status: 'idle' | 'checking' | 'unknown' | 'current' }
+  | { status: 'update-available'; latestCommit: string }
+  | { status: 'failed'; detail: string }
+
+/** Pinned Web-kernel facts shown in the About/software-information surface. */
+export interface ElectronWebKernelState {
+  /** Pinned upstream commit SHA recorded at build time. */
+  commit: string
+  /** Upstream comparison result; idle until a check runs. */
+  update: ElectronWebKernelUpdateState
+}
+
 /** Desktop facts available only to the Electron-managed local renderer. */
 export interface ElectronDesktopState {
   /** Installed application version. */
@@ -72,6 +86,8 @@ export interface ElectronDesktopState {
   remoteAccess: ElectronRemoteAccessState
   /** Authoritative updater state. */
   update: ElectronUpdateState
+  /** Pinned Web-kernel commit and upstream comparison. */
+  webKernel: ElectronWebKernelState
 }
 
 /** Narrow preload API exposed only to the Electron-managed local WebUI. */
@@ -90,6 +106,8 @@ export interface ElectronDesktopBridge {
   checkForUpdates(): Promise<ElectronDesktopState>
   /** Install the prepared update after orderly application shutdown. */
   installUpdate(): Promise<boolean>
+  /** Compare the pinned Web kernel against upstream master. */
+  checkWebKernelUpdate(): Promise<ElectronDesktopState>
 }
 
 declare global {

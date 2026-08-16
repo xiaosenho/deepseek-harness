@@ -32,6 +32,10 @@ function fixture() {
       },
     },
     update: { status: 'idle' as const },
+    webKernel: {
+      commit: '47f943859bef60e4160492346772ded9b24f765a',
+      update: { status: 'idle' as const },
+    },
   }
   const operations: DesktopBridgeOperations = {
     webContents: () => contents,
@@ -43,6 +47,7 @@ function fixture() {
     copyRemoteAccessUrl: vi.fn(async () => true),
     checkForUpdates: vi.fn(async () => state),
     installUpdate: vi.fn(async () => true),
+    checkWebKernelUpdate: vi.fn(async () => state),
   }
   const dispose = installDesktopBridge({
     handle: (channel, handler) => { handlers.set(channel, handler as Handler) },

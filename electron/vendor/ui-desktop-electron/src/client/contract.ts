@@ -23,6 +23,8 @@ export interface DesktopControlInjected {
   checkForUpdates: () => Promise<void>
   /** Install the prepared update and restart the application. */
   installUpdate: () => Promise<boolean>
+  /** Compare the pinned Web kernel against upstream master. */
+  checkWebKernelUpdate: () => Promise<void>
 }
 
 /** Renderer-bound form of the shared injected face. */

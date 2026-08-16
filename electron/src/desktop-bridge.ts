@@ -15,6 +15,7 @@ export const DESKTOP_BRIDGE_CHANNELS = {
   copyRemoteAccess: 'dsh/electron-desktop/copy-remote-access',
   checkUpdates: 'dsh/electron-desktop/check-updates',
   installUpdate: 'dsh/electron-desktop/install-update',
+  checkWebKernelUpdate: 'dsh/electron-desktop/check-web-kernel-update',
 } as const
 
 /** Main-process operations exposed through the narrow bridge. */
@@ -37,6 +38,8 @@ export interface DesktopBridgeOperations {
   checkForUpdates: () => Promise<ElectronDesktopState>
   /** Install a prepared update. */
   installUpdate: () => Promise<boolean>
+  /** Compare the pinned Web kernel against upstream master. */
+  checkWebKernelUpdate: () => Promise<ElectronDesktopState>
 }
 
 function authorize(event: IpcMainInvokeEvent, operations: DesktopBridgeOperations): void {
@@ -101,6 +104,10 @@ export function installDesktopBridge(ipc: Pick<IpcMain, 'handle' | 'removeHandle
   ipc.handle(DESKTOP_BRIDGE_CHANNELS.installUpdate, (event) => {
     authorize(event, operations)
     return operations.installUpdate()
+  })
+  ipc.handle(DESKTOP_BRIDGE_CHANNELS.checkWebKernelUpdate, async (event) => {
+    authorize(event, operations)
+    return operations.checkWebKernelUpdate()
   })
   return () => {
     for (const channel of Object.values(DESKTOP_BRIDGE_CHANNELS)) ipc.removeHandler(channel)

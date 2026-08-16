@@ -1,13 +1,24 @@
 import { useState, type ReactNode } from 'react'
 import { Button, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ElectronUpdateState } from '../bridge-contract.ts'
+import type { ElectronUpdateState, ElectronWebKernelUpdateState } from '../bridge-contract.ts'
 import type { DesktopControlFace } from './contract.ts'
 import css from './desktop.module.css'
 
 /** Software-information row props. */
 export type SoftwareInfoItemProps = PropsRuntime<'settings.general.item'>
   & PropsLocale<'desktop.electron'> & DesktopControlFace
+
+function kernelUpdateLabel(state: ElectronWebKernelUpdateState, t: SoftwareInfoItemProps['t']): string {
+  switch (state.status) {
+    case 'idle':
+    case 'checking': return t('kernelChecking')
+    case 'current': return t('kernelCurrent')
+    case 'unknown': return t('kernelUnknown')
+    case 'failed': return t('kernelUpdateFailed')
+    case 'update-available': return t('kernelUpdateAvailable').replace('{commit}', state.latestCommit.slice(0, 12))
+  }
+}
 
 function updateLabel(state: ElectronUpdateState, t: SoftwareInfoItemProps['t']): string {
   switch (state.status) {
@@ -24,7 +35,7 @@ function updateLabel(state: ElectronUpdateState, t: SoftwareInfoItemProps['t']):
 
 /** Render installed version, release notes, and manual update actions in General Settings. */
 export function SoftwareInfoItem({
-  useDesktopControl, checkForUpdates, installUpdate, t,
+  useDesktopControl, checkForUpdates, installUpdate, checkWebKernelUpdate, t,
 }: SoftwareInfoItemProps): ReactNode {
   const snapshot = useDesktopControl(value => value)
   const [pending, setPending] = useState(false)
@@ -32,7 +43,7 @@ export function SoftwareInfoItem({
   if (snapshot.phase !== 'ready') {
     return <section className={css.infoCard}><h2 className={css.title}>{t('softwareTitle')}</h2></section>
   }
-  const { currentVersion, update } = snapshot.value
+  const { currentVersion, update, webKernel } = snapshot.value
   const run = async (operation: () => Promise<unknown>): Promise<void> => {
     setPending(true)
     setFailed(false)
@@ -73,6 +84,24 @@ export function SoftwareInfoItem({
         )}
       </div>
       {failed && <p className={css.error} role="alert">{t('operationFailed')}</p>}
+      <div className={css.infoHeader}>
+        <div>
+          <h3 className={css.title}>{t('kernelTitle')}</h3>
+          <p className={css.versionLine}>
+            {t('kernelCommit')} <strong>{webKernel.commit === '' ? '—' : webKernel.commit.slice(0, 12)}</strong>
+          </p>
+        </div>
+        <span className={css.updateStatus}>{kernelUpdateLabel(webKernel.update, t)}</span>
+      </div>
+      <div className={css.actions}>
+        <Button
+          variant="outline"
+          disabled={pending || webKernel.update.status === 'checking'}
+          onClick={() => { void run(checkWebKernelUpdate) }}
+        >
+          {t('checkKernelUpdates')}
+        </Button>
+      </div>
     </section>
   )
 }

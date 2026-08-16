@@ -1,7 +1,8 @@
 /** Electron main-process host for the existing dsh Web profile. */
 
 import { join } from 'node:path'
-import type { ElectronDesktopState } from '@deepseek-ai/dsh-client-ui-desktop-electron/bridge-contract'
+import { fileURLToPath } from 'node:url'
+import type { ElectronDesktopState, ElectronWebKernelUpdateState } from '@deepseek-ai/dsh-client-ui-desktop-electron/bridge-contract'
 import { clipboard, shell } from 'electron/common'
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, safeStorage, session } from 'electron/main'
 import {
@@ -45,6 +46,7 @@ import {
   OtaUpdateController,
   type InstallDownloadedUpdate,
 } from './updater.ts'
+import { checkWebKernelUpdate, readWebKernelInfo } from './web-kernel-info.ts'
 
 app.setName('DeepSeek Harness')
 app.setPath('userData', join(app.getPath('appData'), 'DeepSeek Harness'))
@@ -59,6 +61,8 @@ const exitBarrier = new ExitBarrier()
 const fatalRemoteAccessRecovery = new FatalRemoteAccessRecovery()
 const directoryPickerHelper = process.argv.includes(DIRECTORY_PICKER_HELPER_ARGUMENT)
 const isCurrentApplicationNavigation = createApplicationNavigationGuard(() => applicationUrl)
+const kernelInfo = readWebKernelInfo(fileURLToPath(new URL('../resources/version.json', import.meta.url)))
+let webKernelUpdate: ElectronWebKernelUpdateState = { status: 'idle' }
 const otaUpdater = new OtaUpdateController({
   ...(process.env.DSH_ELECTRON_OTA_URL === undefined
     ? {}
@@ -100,6 +104,10 @@ function desktopState(): ElectronDesktopState {
       ...publicEndpoint === undefined ? {} : { publicEndpoint },
     },
     update: otaUpdater.getState(),
+    webKernel: {
+      commit: kernelInfo?.webKernelCommit ?? '',
+      update: webKernelUpdate,
+    },
   }
 }
 
@@ -391,6 +399,16 @@ async function start(): Promise<void> {
           return desktopState()
         },
         installUpdate: () => otaUpdater.install(),
+        checkWebKernelUpdate: async () => {
+          const commit = kernelInfo?.webKernelCommit
+          if (commit === undefined || commit === '') {
+            webKernelUpdate = { status: 'unknown' }
+            return desktopState()
+          }
+          webKernelUpdate = { status: 'checking' }
+          webKernelUpdate = await checkWebKernelUpdate(commit, fetch)
+          return desktopState()
+        },
       })
     } else {
       applicationUrl = resolveApplicationUrl(process.env.DSH_ELECTRON_URL)
