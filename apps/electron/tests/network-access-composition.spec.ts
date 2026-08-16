@@ -11,6 +11,9 @@ const LOOPBACK_OVERLAY = fileURLToPath(
 const LAN_OVERLAY = fileURLToPath(
   new URL('../resources/lan-access.cordis.patch.yml', import.meta.url),
 )
+const REVERSE_OVERLAY = fileURLToPath(
+  new URL('../resources/reverse-access.cordis.patch.yml', import.meta.url),
+)
 const BASE_ENTRIES = [
   {
     id: 'webserver',
@@ -27,7 +30,11 @@ const USER_NETWORK_PATCHES: PatchOptions[] = [
   { id: 'webserver', config: { host: '0.0.0.0', port: 7777 } },
   {
     id: 'connection',
-    config: { remoteAccessToken: 'stale-user-token', trustedHosts: ['untrusted.example'] },
+    config: {
+      loopbackAccessToken: 'stale-local-token',
+      remoteAccessToken: 'stale-user-token',
+      trustedHosts: ['untrusted.example'],
+    },
   },
 ]
 
@@ -52,6 +59,7 @@ describe('Electron network overlay composition', () => {
     })
     expect(entries.get('connection')?.config).toEqual({ trustedHosts: [] })
     expect(entries.get('connection')?.config).not.toHaveProperty('remoteAccessToken')
+    expect(entries.get('connection')?.config).not.toHaveProperty('loopbackAccessToken')
   })
 
   it('reasserts LAN binding and replaces lower-layer credentials with the launch token', () => {
@@ -66,6 +74,26 @@ describe('Electron network overlay composition', () => {
         __jsExpr: "process.env.DSH_ELECTRON_REMOTE_ACCESS_TOKEN ?? ''",
       },
       trustedHosts: { __jsExpr: 'ctx.webRuntime.trustedHosts' },
+    })
+  })
+
+  it('keeps reverse access on loopback and trusts only the launch authority and token', () => {
+    const entries = composeNetworkOverlay(REVERSE_OVERLAY)
+
+    expect(entries.get('webserver')?.config).toEqual({
+      host: '127.0.0.1',
+      port: { __jsExpr: 'ctx.webStartup.port ?? 0' },
+    })
+    expect(entries.get('connection')?.config).toEqual({
+      loopbackAccessToken: {
+        __jsExpr: "process.env.DSH_ELECTRON_LOOPBACK_ACCESS_TOKEN ?? ''",
+      },
+      remoteAccessToken: {
+        __jsExpr: "process.env.DSH_ELECTRON_REMOTE_ACCESS_TOKEN ?? ''",
+      },
+      trustedHosts: {
+        __jsExpr: '[process.env.DSH_ELECTRON_REMOTE_ACCESS_AUTHORITY]',
+      },
     })
   })
 })

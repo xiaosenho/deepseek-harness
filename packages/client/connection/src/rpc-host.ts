@@ -12,7 +12,11 @@ import {
   type ServerResponse as RpcServerResponse,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { bridge, type FetchHandler } from './http-bridge.ts'
-import { isTrustedApiRequest, isTrustedNodeApiRequest } from './api-request-trust.ts'
+import {
+  isTrustedApiRequest,
+  isTrustedNodeApiRequest,
+  type ApiAccessTokens,
+} from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type {
   ConnectionRpcAuthority,
@@ -48,12 +52,12 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * Provide the Host half over the active HTTP server.
    * @param ctx - owning Connection plugin context.
    * @param trustedHosts - deployment authorities accepted by trusted-host channels.
-   * @param remoteAccessToken - optional proof required by trusted non-loopback channels.
+   * @param accessTokens - optional proofs selected for loopback and trusted non-loopback Hosts.
    */
   constructor(
     ctx: Context,
     private readonly trustedHosts: readonly string[],
-    private readonly remoteAccessToken?: string,
+    private readonly accessTokens: ApiAccessTokens,
   ) {
     super(ctx, 'connection')
   }
@@ -88,7 +92,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
         if (interceptor.options.authority === 'loopback' && !isTrustedApiRequest(
           request,
           this.trustedHostsFor(interceptor.options.authority),
-          this.remoteAccessToken,
+          this.accessTokens,
         )) {
           return Promise.resolve(new Response('forbidden', { status: 403 }))
         }
@@ -110,7 +114,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
       kind: 'prefix',
       path: channel,
       handler: async (req, res) => {
-        if (!isTrustedNodeApiRequest(req, trustedHosts, this.remoteAccessToken)) {
+        if (!isTrustedNodeApiRequest(req, trustedHosts, this.accessTokens)) {
           res.writeHead(403)
           res.end('forbidden')
           return
@@ -158,7 +162,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * @returns trusted non-loopback authorities eligible for the request check.
    */
   private trustedHostsFor(authority: ConnectionRpcAuthority): readonly string[] {
-    return authority === 'trusted-host' || this.remoteAccessToken !== undefined
+    return authority === 'trusted-host' || this.accessTokens.remoteAccessToken !== undefined
       ? this.trustedHosts
       : []
   }

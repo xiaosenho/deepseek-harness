@@ -396,7 +396,7 @@ export type Config = LocalConfig
 需要：`webServer`
 
 ```ts config-catalog
-/** Plugin config: the deployment's non-loopback serving authorities. */
+/** Plugin config: serving authorities and their optional cookie proofs. */
 export interface ConnectionConfig {
   /**
    * Authorities this deployment serves beyond loopback: exact `host:port`, or
@@ -412,16 +412,25 @@ export interface ConnectionConfig {
    * Shared secret of at least 12 characters required from trusted non-loopback
    * authorities. A valid secret grants access to token-eligible Host methods;
    * explicitly loopback-only methods remain unavailable. Loopback requests
-   * never require it. When omitted, `trustedHosts` retains its existing
-   * authority-only behavior.
+   * never use it. When omitted, `trustedHosts` retains its existing
+   * authority-only behavior. It must differ from `loopbackAccessToken` when
+   * both are configured.
    */
   remoteAccessToken?: string
+  /**
+   * Shared secret of at least 12 characters required from every loopback Host.
+   * This protects a loopback-bound server when a local forwarder makes public
+   * TCP traffic appear to have a loopback peer. A `remoteAccessToken` cookie
+   * never substitutes for this proof. It must differ from `remoteAccessToken`
+   * when both are configured.
+   */
+  loopbackAccessToken?: string
   /** Maximum buffered JSON body for every `/api` request. */
   maxRequestBodyBytes?: number
 }
 ```
 
-来源：[`packages/client/connection/src/index.ts:54`](../packages/client/connection/src/index.ts)
+来源：[`packages/client/connection/src/index.ts:55`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -3079,6 +3088,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-conversation`（[`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-cordis`（[`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-deliverables` — 需要 `systemPrompt`（[`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-desktop-electron`（[`packages/client/ui-desktop-electron/src/index.ts`](../packages/client/ui-desktop-electron/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse`（[`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-directory-picker-electron`（[`packages/client/ui-directory-picker-electron/src/index.ts`](../packages/client/ui-directory-picker-electron/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-directory-picker-native`（[`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts)）

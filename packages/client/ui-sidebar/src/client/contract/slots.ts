@@ -33,6 +33,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * package's 'sidebar' entry; each action receives only the column state.
      */
     'sidebar.footer.action': { kind: 'list'; scope: 'root'; owner: SidebarFooterActionOwnerProps }
+    /** Optional notification anchored to the top-left product mark. */
+    'sidebar.brand.badge': { kind: 'list'; scope: 'root'; owner: SidebarBrandBadgeOwnerProps }
   }
 }
 
@@ -62,6 +64,12 @@ export interface SidebarFooterActionOwnerProps {
   wide: boolean
 }
 
+/** Owner share of a notification anchored to the product mark. */
+export interface SidebarBrandBadgeOwnerProps {
+  /** Whether the full wordmark, rather than the collapsed mark, is visible. */
+  wide: boolean
+}
+
 /**
  * Registrant-private injected share (arrives via the register inject
  * factory). The shell keeps only its own controls: starting a Session from
@@ -85,5 +93,7 @@ export type SidebarRootInjected = {
  */
 export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>
-  & PropsRenderSlots<'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action'>
+  & PropsRenderSlots<
+    'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action' | 'sidebar.brand.badge'
+  >
   & SidebarRootInjected & PropsLocale<'sidebar'>

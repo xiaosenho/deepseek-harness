@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-electron-settings-frp-remote-access.md
+2026-08-15-electron-settings-frp-remote-access.md: e56540fdb0b8d7ea38e9559535435bb81d02dec8
+2026-08-15-electron-settings-frp-remote-access.zh.md: 645d020f76b2f6ae0bfc487efd6427841a4ad0e4

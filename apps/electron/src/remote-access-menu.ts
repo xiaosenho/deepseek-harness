@@ -96,33 +96,49 @@ export async function showRemoteAccessDetails(
   return result.response === 0 ? copyRemoteAccessUrl(options, url) : false
 }
 
-function confirmationDialog(applicationName: string, enabled: boolean): MessageBoxOptions {
-  return enabled
-    ? {
-      type: 'warning',
-      title: applicationName,
-      message: 'Start remote access?',
-      detail: 'DeepSeek Harness will restart its WebUI. Anyone on the trusted LAN who receives the connection URL can control the Harness Host.',
-      buttons: ['Start Remote Access', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      noLink: true,
-    }
-    : {
-      type: 'warning',
-      title: applicationName,
-      message: 'Stop remote access?',
-      detail: 'DeepSeek Harness will restart its WebUI and invalidate the current URL. Running tasks and connected remote clients will be interrupted.',
-      buttons: ['Stop Remote Access', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      noLink: true,
-    }
+function confirmationDialog(
+  applicationName: string,
+  enabled: boolean,
+  preferredMode: RemoteAccessState['preferredMode'],
+): MessageBoxOptions {
+  if (enabled) {
+    return preferredMode === 'frp'
+      ? {
+        type: 'warning',
+        title: applicationName,
+        message: 'Publish remote access through FRP?',
+        detail: 'DeepSeek Harness will restart its WebUI and publish it through the configured public FRP server. Anyone who receives the complete URL can control the Harness Host. A plaintext HTTP public origin exposes the credential and traffic to interception.',
+        buttons: ['Publish Remote Access', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      }
+      : {
+        type: 'warning',
+        title: applicationName,
+        message: 'Start remote access?',
+        detail: 'DeepSeek Harness will restart its WebUI. Anyone on the trusted LAN who receives the connection URL can control the Harness Host.',
+        buttons: ['Start Remote Access', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      }
+  }
+  return {
+    type: 'warning',
+    title: applicationName,
+    message: 'Stop remote access?',
+    detail: 'DeepSeek Harness will restart its WebUI and invalidate the current URL. Running tasks and connected remote clients will be interrupted.',
+    buttons: ['Stop Remote Access', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  }
 }
 
 /**
  * Confirm and perform one native-menu exposure change.
- * @param enabled - requested LAN exposure state.
+ * @param enabled - requested configured-transport exposure state.
  * @param options - controller, navigation, menu, dialog, and clipboard integrations.
  * @returns whether the requested mode became active.
  */
@@ -133,12 +149,16 @@ export async function changeRemoteAccessFromMenu(
   const initial = options.controller.getState()
   if (initial.transitioning || initial.enabled === enabled) return false
   const confirmation = await options.showMessageBox(
-    confirmationDialog(options.applicationName, enabled),
+    confirmationDialog(options.applicationName, enabled, initial.preferredMode),
   )
   if (confirmation.response !== 0) return false
 
   const current = options.controller.getState()
-  if (current.transitioning || current.enabled === enabled) {
+  if (
+    current.transitioning
+    || current.enabled === enabled
+    || current.preferredMode !== initial.preferredMode
+  ) {
     options.refreshMenu()
     return false
   }

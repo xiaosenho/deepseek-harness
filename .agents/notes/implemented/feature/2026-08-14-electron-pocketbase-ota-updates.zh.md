@@ -16,6 +16,8 @@ Status: implemented
 
 PocketBase 负责选择发布，但不描述可下载文件。DMG `file_url` 所在目录是 Electron Updater generic provider，其中包含 Electron Builder 的 `latest-mac.yml`。由于 PocketBase 已经选择精确发布，Electron Builder 会关闭自动预发布 channel 检测，因此预发布 SemVer 不会改变元数据文件名。下载前，客户端要求 provider 版本等于 PocketBase 版本，要求 provider 文件列表包含与 `file_url` 完全相同的 origin 和路径，要求所有候选文件保留在同一个 HTTPS 目录，并要求每个候选文件都带有规范的 SHA-512 值。之后，Squirrel.Mac 的下载与安装行为由 Electron Updater 负责。
 
+ESM 主进程会在发布选择后按需加载 CommonJS `electron-updater` 包，并从该包的默认导出对象读取 `autoUpdater`。源码运行、不支持的平台以及没有较新发布的检查都不会加载该包。
+
 Electron Builder 会同时生成 macOS DMG 与 ZIP，并为 COS 制品根目录生成 generic-provider 元数据。发布者先上传安装程序、必要的 ZIP、元数据与 blockmap，再发布 PocketBase 记录。该记录是发布提交点：在制品集完整之前写入记录，会使客户端判定该发布无效。
 
 检查与下载在 WebUI 启动 promise 之外运行。失败只会写入日志，当前应用继续运行。可选发布使用 `autoInstallOnAppQuit`，因此现有桌面退出流程会先等待 WebUI 进程树停止，再应用待处理更新。`is_force: true` 的发布会在下载完成后立即请求安装；主进程先关闭当前 `RemoteAccessController` 或 `WebBackend`，再调用 `quitAndInstall()` 重新启动。同一个退出屏障会合并并发退出请求，只在关闭成功后允许 Electron 退出，并在关闭失败后允许重试。
@@ -42,4 +44,4 @@ macOS 应用会在每次打包版本启动时检查一次更新，也支持通�
 
 OTA bucket 必须为每个被选中的发布保留完整 Electron Builder 制品集。如果 PocketBase 记录所在目录缺少预期元数据或 ZIP，该记录虽然可见但不可使用；客户端会记录失败，不会回退到未校验的安装程序。
 
-已安装旧版本到新版本的更新验收仍需目标平台的原生发布证据。单元测试覆盖 PocketBase 校验、元数据锚定、后台策略、强制策略与关闭顺序，但不能替代已签名并公证的 Squirrel.Mac 安装测试。
+已安装旧版本到新版本的更新验收仍需目标平台的原生发布证据。单元测试覆盖 PocketBase 校验、元数据锚定、打包依赖的 CommonJS 导出布局、后台策略、强制策略与关闭顺序，但不能替代已签名并公证的 Squirrel.Mac 安装测试。

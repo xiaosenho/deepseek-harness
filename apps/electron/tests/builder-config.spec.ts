@@ -6,9 +6,18 @@ import config from '../electron-builder.config.mjs'
 const electronRoot = resolve(import.meta.dirname, '..')
 
 describe('Electron Builder runtime closure', () => {
+  it('packages the CommonJS preload used by the sandboxed window', () => {
+    expect(config.files).toContain('lib/*.cjs')
+    expect(readFileSync(resolve(electronRoot, 'src/main.ts'), 'utf8')).toContain(
+      "preload: join(app.getAppPath(), 'lib', 'preload.cjs')",
+    )
+  })
+
   it('packages every direct workspace dependency and its runtime closure', () => {
     const destinations = config.extraResources.map(resource => resource.to)
     expect(destinations).toContain('app/node_modules/@deepseek-ai/dsh')
+    expect(destinations).toContain('app/node_modules/@deepseek-ai/dsh-client-connection')
+    expect(destinations).toContain('app/node_modules/@deepseek-ai/dsh-client-ui-desktop-electron')
     expect(destinations).toContain('app/node_modules/@deepseek-ai/dsh-host-directory-picker-electron')
     expect(destinations).toContain('app/node_modules/@deepseek-ai/dsh-client-ui-directory-picker-electron')
   })

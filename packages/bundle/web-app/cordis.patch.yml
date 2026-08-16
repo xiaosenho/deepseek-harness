@@ -189,6 +189,11 @@
     - id: ui-settings-general
       name: '@deepseek-ai/dsh-client-ui-settings-general'
 
+    # Inert in ordinary browsers; the managed Electron preload activates its
+    # remote-access, software-information, and update-notification entries.
+    - id: ui-desktop-electron
+      name: '@deepseek-ai/dsh-client-ui-desktop-electron'
+
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 

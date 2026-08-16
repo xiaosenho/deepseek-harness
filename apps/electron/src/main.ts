@@ -1,8 +1,9 @@
 /** Electron main-process host for the existing dsh Web profile. */
 
 import { join } from 'node:path'
+import type { ElectronDesktopState } from '@deepseek-ai/dsh-client-ui-desktop-electron/bridge-contract'
 import { clipboard, shell } from 'electron/common'
-import { app, BrowserWindow, dialog, Menu, net } from 'electron/main'
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, safeStorage, session } from 'electron/main'
 import {
   createApplicationMenuTemplate,
   refreshRemoteAccessMenu,
@@ -10,6 +11,8 @@ import {
 } from './application-menu.ts'
 import { resolveApplicationUrl } from './application-url.ts'
 import { WebBackend } from './backend.ts'
+import { installDesktopBridge } from './desktop-bridge.ts'
+import { FrpcClient } from './frpc.ts'
 import {
   DIRECTORY_PICKER_HELPER_ARGUMENT,
   pickElectronDirectory,
@@ -28,7 +31,15 @@ import {
   type NativeRemoteAccessOptions,
 } from './remote-access-menu.ts'
 import { FatalRemoteAccessRecovery } from './remote-access-recovery.ts'
+import {
+  defaultRemoteAccessConfiguration,
+  normalizeRemoteAccessConfiguration,
+  redactRemoteAccessConfiguration,
+  RemoteAccessConfigurationStore,
+} from './remote-access-config.ts'
 import { ExitBarrier } from './exit-barrier.ts'
+import { synchronizeRendererAccessCookie } from './renderer-access-cookie.ts'
+import { pickRemoteAccessFile } from './remote-access-file-picker.ts'
 import {
   installUpdateAfterShutdown,
   OtaUpdateController,
@@ -41,6 +52,7 @@ app.setPath('userData', join(app.getPath('appData'), 'DeepSeek Harness'))
 let mainWindow: BrowserWindow | undefined
 let applicationUrl: URL | undefined
 let remoteAccess: RemoteAccessController | undefined
+let remoteAccessStore: RemoteAccessConfigurationStore | undefined
 let quitting = false
 const backend = new WebBackend()
 const exitBarrier = new ExitBarrier()
@@ -54,7 +66,7 @@ const otaUpdater = new OtaUpdateController({
   currentVersion: app.getVersion(),
   fetch: (input, init) => net.fetch(input, init),
   isPackaged: app.isPackaged,
-  onForceUpdateReady: restartForForcedUpdate,
+  onForceUpdateReady: restartForUpdate,
   platform: process.platform,
 })
 
@@ -64,6 +76,52 @@ function openExternal(target: string): void {
 
 function stopOwnedProcesses(): Promise<void> {
   return remoteAccess?.shutdown() ?? backend.stop()
+}
+
+function desktopState(): ElectronDesktopState {
+  const controller = remoteAccess
+  if (controller === undefined) throw new Error('Electron does not own this WebUI')
+  const state = controller.getState()
+  const configuration = redactRemoteAccessConfiguration(controller.getConfiguration())
+  let publicEndpoint: string | undefined
+  if (state.url !== undefined) {
+    const endpoint = new URL(state.url)
+    endpoint.hash = ''
+    publicEndpoint = endpoint.href
+  }
+  return {
+    currentVersion: app.getVersion(),
+    remoteAccess: {
+      enabled: state.enabled,
+      preferredMode: configuration.mode,
+      transitioning: state.transitioning,
+      frp: configuration.frp,
+      ...state.mode === undefined ? {} : { activeMode: state.mode },
+      ...publicEndpoint === undefined ? {} : { publicEndpoint },
+    },
+    update: otaUpdater.getState(),
+  }
+}
+
+function remoteAccessSecretCodec() {
+  const requireSecureStorage = (): void => {
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error('The operating-system secret store is unavailable')
+    }
+    if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') {
+      throw new Error('The Linux secret store is using unencrypted basic-text storage')
+    }
+  }
+  return {
+    encrypt(value: string): string {
+      requireSecureStorage()
+      return safeStorage.encryptString(value).toString('base64')
+    },
+    decrypt(value: string): string {
+      requireSecureStorage()
+      return safeStorage.decryptString(Buffer.from(value, 'base64'))
+    },
+  }
 }
 
 function relaunchAfterInstallFailure(error: Error): void {
@@ -80,6 +138,7 @@ function configureApplicationMenu(): void {
     applicationName,
     checkForUpdates: () => otaUpdater.check(),
     currentVersion,
+    installUpdate: () => otaUpdater.install(),
     platform: process.platform,
     showMessageBox: options => dialog.showMessageBox(options),
   }
@@ -141,7 +200,7 @@ function runRemoteAccessCopy(): void {
     .catch(logRemoteAccessMenuFailure)
 }
 
-async function restartForForcedUpdate(install: InstallDownloadedUpdate): Promise<void> {
+async function restartForUpdate(install: InstallDownloadedUpdate): Promise<void> {
   if (quitting) return
   quitting = true
   try {
@@ -163,6 +222,28 @@ async function restartForForcedUpdate(install: InstallDownloadedUpdate): Promise
       detail,
     })
   }
+}
+
+async function setRemoteAccessFromRenderer(enabled: boolean): Promise<boolean> {
+  const controller = remoteAccess
+  if (controller === undefined) return false
+  const result = await controller.setEnabled(enabled)
+  refreshInstalledRemoteAccessMenu()
+  const navigationUrl = result.navigationUrl
+  if (navigationUrl !== undefined) {
+    setImmediate(() => { navigateApplication(navigationUrl) })
+  }
+  return result.succeeded
+}
+
+async function saveRemoteAccessConfigurationFromRenderer(input: unknown): Promise<ElectronDesktopState> {
+  const controller = remoteAccess
+  const store = remoteAccessStore
+  if (controller === undefined || store === undefined) throw new Error('Electron does not own this WebUI')
+  const configuration = normalizeRemoteAccessConfiguration(input, controller.getConfiguration())
+  const saved = await controller.setConfiguration(configuration, () => store.save(configuration))
+  if (!saved) throw new Error('Remote-access settings can be changed only while remote access is off')
+  return desktopState()
 }
 
 function reportRemoteAccessFailure(error: Error): void {
@@ -191,11 +272,23 @@ function reportFatalRemoteAccessFailure(error: Error): void {
 function navigateApplication(url: URL): void {
   if (quitting) return
   const window = mainWindow
-  void loadRestartedApplication(
+  void synchronizeRendererAccessCookie(
+    session.defaultSession.cookies,
     url,
-    (next) => { applicationUrl = next },
-    window === undefined ? undefined : target => window.loadURL(target),
-    reportFatalRemoteAccessFailure,
+    remoteAccess?.getRendererAccessToken(),
+  ).then(
+    () => loadRestartedApplication(
+      url,
+      (next) => { applicationUrl = next },
+      window === undefined ? undefined : target => window.loadURL(target),
+      reportFatalRemoteAccessFailure,
+    ),
+    (error: unknown) => {
+      const detail = error instanceof Error ? error.message : String(error)
+      reportFatalRemoteAccessFailure(new Error(
+        `The WebUI restarted at ${url.origin}, but Electron could not prepare local authentication: ${detail}`,
+      ))
+    },
   )
 }
 
@@ -215,6 +308,9 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       webviewTag: false,
+      ...remoteAccess === undefined
+        ? {}
+        : { preload: join(app.getAppPath(), 'lib', 'preload.cjs') },
     },
   })
   window.webContents.setWindowOpenHandler(({ url: target }) => {
@@ -243,10 +339,20 @@ async function start(): Promise<void> {
   try {
     const defaultCwd = app.isPackaged ? app.getPath('home') : join(app.getAppPath(), '..', '..')
     if (process.env.DSH_ELECTRON_URL === undefined) {
+      const store = new RemoteAccessConfigurationStore(
+        join(app.getPath('userData'), 'remote-access.json'),
+        remoteAccessSecretCodec(),
+      )
+      const configuration = await store.load(defaultRemoteAccessConfiguration(
+        process.env.DSH_ELECTRON_FRPC_PATH?.trim() || 'frpc',
+      ))
       const controller = new RemoteAccessController({
         backend,
+        frpc: new FrpcClient({ temporaryRoot: app.getPath('temp') }),
+        configuration,
         cwd: process.env.DSH_ELECTRON_CWD?.trim() || defaultCwd,
-        onTransitionError: (error, fatal) => {
+        onTransitionError: (error, fatal, navigationUrl) => {
+          if (navigationUrl !== undefined) setImmediate(() => { navigateApplication(navigationUrl) })
           if (fatal) reportFatalRemoteAccessFailure(error)
           else reportRemoteAccessFailure(error)
         },
@@ -266,16 +372,42 @@ async function start(): Promise<void> {
         }),
       })
       remoteAccess = controller
+      remoteAccessStore = store
       const location = await controller.start()
       applicationUrl = location.loopbackUrl
+      installDesktopBridge(ipcMain, {
+        applicationUrl: () => applicationUrl,
+        webContents: () => mainWindow?.webContents,
+        getState: desktopState,
+        setRemoteAccessEnabled: setRemoteAccessFromRenderer,
+        saveRemoteAccessConfiguration: saveRemoteAccessConfigurationFromRenderer,
+        selectRemoteAccessFile: kind => pickRemoteAccessFile(dialog, kind),
+        copyRemoteAccessUrl: async () => {
+          const current = remoteAccess
+          return current === undefined ? false : copyRemoteAccessUrl(nativeRemoteAccessOptions(current))
+        },
+        checkForUpdates: async () => {
+          await otaUpdater.check()
+          return desktopState()
+        },
+        installUpdate: () => otaUpdater.install(),
+      })
     } else {
       applicationUrl = resolveApplicationUrl(process.env.DSH_ELECTRON_URL)
       remoteAccess = undefined
+      remoteAccessStore = undefined
     }
     const window = createWindow()
+    void otaUpdater.check()
+    if (remoteAccess !== undefined) {
+      await synchronizeRendererAccessCookie(
+        session.defaultSession.cookies,
+        applicationUrl,
+        remoteAccess.getRendererAccessToken(),
+      )
+    }
     await window.loadURL(applicationUrl.href)
     configureApplicationMenu()
-    void otaUpdater.check()
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     await dialog.showMessageBox({
@@ -305,7 +437,8 @@ if (directoryPickerHelper) {
   app.on('second-instance', () => {
     if (mainWindow === undefined && applicationUrl !== undefined) {
       const window = createWindow()
-      void window.loadURL(applicationUrl.href)
+      if (remoteAccess === undefined) void window.loadURL(applicationUrl.href)
+      else navigateApplication(applicationUrl)
     }
     mainWindow?.restore()
     mainWindow?.focus()
@@ -313,7 +446,8 @@ if (directoryPickerHelper) {
   app.on('activate', () => {
     if (mainWindow === undefined && applicationUrl !== undefined) {
       const window = createWindow()
-      void window.loadURL(applicationUrl.href)
+      if (remoteAccess === undefined) void window.loadURL(applicationUrl.href)
+      else navigateApplication(applicationUrl)
     }
   })
   app.on('window-all-closed', () => {

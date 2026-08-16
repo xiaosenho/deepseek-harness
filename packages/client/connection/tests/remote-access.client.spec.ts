@@ -14,7 +14,7 @@ interface BrowserFixture {
   storageWrites: Array<{ key: string; value: string }>
 }
 
-function browser(hash: string): BrowserFixture {
+function browser(hash: string, protocol = 'http:'): BrowserFixture {
   const cookieWrites: string[] = []
   const navigations: string[] = []
   const replacements: BrowserFixture['replacements'] = []
@@ -23,6 +23,7 @@ function browser(hash: string): BrowserFixture {
   vi.stubGlobal('location', {
     hash,
     pathname: '/session/current',
+    protocol,
     replace(url: string) {
       navigations.push(url)
     },
@@ -68,6 +69,15 @@ describe('consumeRemoteAccessFragment', () => {
       '/session/current?view=chat#panel=details&mode=compact',
     ])
     expect(fixture.replacements).toEqual([])
+  })
+
+  it('marks the remote-access cookie Secure on an HTTPS origin', () => {
+    const fixture = browser(`#${REMOTE_ACCESS_FRAGMENT_PARAM}=remote-token-1234`, 'https:')
+    expect(consumeRemoteAccessFragment()).toBe(true)
+    expect(fixture.cookieWrites).toEqual([
+      `${REMOTE_ACCESS_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Strict; Secure`,
+      `${REMOTE_ACCESS_COOKIE_NAME}=remote-token-1234; Path=/api; SameSite=Strict; Secure`,
+    ])
   })
 
   it('removes a sole token without leaving an empty fragment', () => {

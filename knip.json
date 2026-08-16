@@ -757,6 +757,7 @@
     "apps/electron": {
       "entry": [
         "src/main.ts",
+        "src/preload.ts",
         "tests/**/*.spec.ts",
         "tests/**/*.snapshot.ts"
       ],

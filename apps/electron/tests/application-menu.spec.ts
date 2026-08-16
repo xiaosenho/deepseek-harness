@@ -12,6 +12,7 @@ function options(overrides: Partial<ApplicationMenuOptions> = {}): ApplicationMe
     applicationName: 'DeepSeek Harness',
     checkForUpdates: vi.fn().mockResolvedValue({ status: 'current' }),
     currentVersion: '0.1.0',
+    installUpdate: vi.fn().mockResolvedValue(true),
     platform: 'darwin',
     showMessageBox: vi.fn().mockResolvedValue({ checkboxChecked: false, response: 0 }),
     ...overrides,
@@ -27,7 +28,7 @@ function remoteOptions(
   overrides: Partial<RemoteAccessMenuOptions> = {},
 ): RemoteAccessMenuOptions {
   return {
-    state: { enabled: false, transitioning: false },
+    state: { enabled: false, preferredMode: 'lan', transitioning: false },
     commands: {
       start: vi.fn(),
       stop: vi.fn(),
@@ -97,7 +98,9 @@ describe('Electron application menu', () => {
   it('projects enabled and changing controller states without putting the URL in labels', () => {
     const url = 'http://192.168.1.5:43127/#dsh-access=secret-token'
     const enabled = remoteItems(createApplicationMenuTemplate(options({
-      remoteAccess: remoteOptions({ state: { enabled: true, transitioning: false, url } }),
+      remoteAccess: remoteOptions({
+        state: { enabled: true, mode: 'lan', preferredMode: 'lan', transitioning: false, url },
+      }),
     })))
     expect(enabled.find(item => item.id === 'remote-access-status')).toMatchObject({ label: 'Status: On' })
     expect(enabled.find(item => item.id === 'remote-access-details')).toMatchObject({ enabled: true })
@@ -106,7 +109,9 @@ describe('Electron application menu', () => {
     expect(JSON.stringify(enabled)).not.toContain(url)
 
     const changing = remoteItems(createApplicationMenuTemplate(options({
-      remoteAccess: remoteOptions({ state: { enabled: true, transitioning: true, url } }),
+      remoteAccess: remoteOptions({
+        state: { enabled: true, mode: 'frp', preferredMode: 'frp', transitioning: true, url },
+      }),
     })))
     expect(changing.find(item => item.id === 'remote-access-status')).toMatchObject({
       label: 'Status: Changing...',
@@ -129,6 +134,8 @@ describe('Electron application menu', () => {
       },
     }, {
       enabled: true,
+      mode: 'frp',
+      preferredMode: 'frp',
       transitioning: false,
       url: 'http://192.168.1.5:43127/#dsh-access=secret-token',
     })
@@ -144,6 +151,7 @@ describe('Electron application menu', () => {
     expect(() => {
       refreshRemoteAccessMenu({ getMenuItemById: () => null }, {
         enabled: false,
+        preferredMode: 'lan',
         transitioning: false,
       })
     }).toThrow('remote-access-status')
@@ -154,7 +162,7 @@ describe('Electron application menu', () => {
     [{ status: 'unsupported' } as const, 'Automatic updates are not available on this platform.'],
     [{ status: 'no-release' } as const, 'No update is currently published.'],
     [{ status: 'current' } as const, 'DeepSeek Harness 0.1.0 is up to date.'],
-    [{ status: 'ready', version: '0.2.0' } as const, 'DeepSeek Harness 0.2.0 is ready to install.'],
+    [{ status: 'ready', version: '0.2.0', changelog: 'New desktop controls.' } as const, 'DeepSeek Harness 0.2.0 is ready to install.'],
     [{ status: 'failed', detail: 'network unavailable' } as const, 'The update check failed.'],
   ])('presents the %s result and restores the menu item', async (result, message) => {
     const showMessageBox = vi.fn().mockResolvedValue({ checkboxChecked: false, response: 0 })

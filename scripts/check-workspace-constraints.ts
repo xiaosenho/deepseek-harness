@@ -53,7 +53,8 @@ const releaseMemberDirectory = /^(?:packages\/[^/]+\/[^/]+|apps\/[^/]+|vendor\/[
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'config'],
-  '@deepseek-ai/dsh-electron': ['lib/*.js', 'resources/*.yml'],
+  // Electron loads the context-isolated preload through a CJS-only runtime slot.
+  '@deepseek-ai/dsh-electron': ['lib/*.cjs', 'lib/*.js', 'resources/*.yml'],
   // The Web build emits sourcemaps for browser debugging; publishing them is
   // what the payload policy forbids, so the bundle ships without them.
   '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
@@ -136,6 +137,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-base': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
+  // Electron consumes these names without importing the browser client bundle.
+  '@deepseek-ai/dsh-client-connection': ['lib/remote-access.js'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
   // The Python runtime uses a distinct closed-resolution bin; the public CLI
   // keeps config-owned bare-package resolution through lib/bin.js.

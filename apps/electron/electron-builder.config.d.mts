@@ -1,5 +1,6 @@
 declare const config: {
   readonly detectUpdateChannel: boolean
+  readonly files: readonly string[]
   readonly extraResources: readonly {
     readonly from: string
     readonly to: string

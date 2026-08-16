@@ -6,7 +6,7 @@ const RELEASE_COLLECTION = 'app_releases'
 const RELEASE_RESPONSE_LIMIT_BYTES = 64 * 1024
 const RELEASE_REQUEST_TIMEOUT_MS = 10_000
 
-type OtaPlatform = 'macos'
+type OtaPlatform = 'macos' | 'windows'
 type ReleaseFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 /** Starts a downloaded installer and reports updater errors that occur after invocation. */
@@ -82,8 +82,11 @@ export type OtaUpdateCheckResult =
   | { status: 'unsupported' }
   | { status: 'no-release' }
   | { status: 'current' }
-  | { status: 'ready'; version: string }
+  | { status: 'ready'; version: string; changelog: string }
   | { status: 'failed'; detail: string }
+
+/** Current observable state of the Electron-owned updater. */
+export type OtaUpdateState = { status: 'idle' | 'checking' } | OtaUpdateCheckResult
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -103,6 +106,10 @@ function parseBaseUrl(value: string): URL {
 function mapPlatform(platform: NodeJS.Platform): OtaPlatform | undefined {
   if (platform === 'darwin') return 'macos'
   return undefined
+}
+
+function artifactSuffix(platform: OtaPlatform): string {
+  return platform === 'macos' ? '.dmg' : '.exe'
 }
 
 function parseRelease(value: unknown, expectedPlatform: OtaPlatform): OtaRelease {
@@ -133,8 +140,9 @@ function parseRelease(value: unknown, expectedPlatform: OtaPlatform): OtaRelease
   ) {
     throw new Error(`Electron OTA release file_url must be under ${TRUSTED_ARTIFACT_ROOT_URL.href}`)
   }
-  if (!fileUrl.pathname.endsWith('.dmg')) {
-    throw new Error('Electron OTA release file_url must identify a macOS DMG')
+  const suffix = artifactSuffix(expectedPlatform)
+  if (!fileUrl.pathname.endsWith(suffix)) {
+    throw new Error(`Electron OTA release file_url must identify a ${expectedPlatform} ${suffix} artifact`)
   }
   return { id, platform: expectedPlatform, version, versionCode: versionCode as number, changelog, force, fileUrl }
 }
@@ -245,8 +253,8 @@ function validateUpdateMetadata(release: OtaRelease, info: UpdateInfo, baseUrl: 
 
 async function resolveUpdater(override: ElectronUpdater | undefined): Promise<ElectronUpdater> {
   if (override !== undefined) return override
-  const { autoUpdater } = await import('electron-updater')
-  return autoUpdater
+  const updaterModule = await import('electron-updater')
+  return updaterModule.default.autoUpdater
 }
 
 /**
@@ -302,7 +310,7 @@ export async function startOtaUpdate(options: StartOtaUpdateOptions): Promise<Ot
         }
       })
     }
-    return { status: 'ready', version: release.version }
+    return { status: 'ready', version: release.version, changelog: release.changelog }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`[OTA] Update check failed: ${detail}`)
@@ -314,9 +322,19 @@ export async function startOtaUpdate(options: StartOtaUpdateOptions): Promise<Ot
 export class OtaUpdateController {
   private pending: Promise<OtaUpdateCheckResult> | undefined
   private ready: Extract<OtaUpdateCheckResult, { status: 'ready' }> | undefined
+  private installReadyUpdate: InstallDownloadedUpdate | undefined
+  private state: OtaUpdateState = { status: 'idle' }
 
   /** @param options - stable application and updater dependencies. */
   constructor(private readonly options: StartOtaUpdateOptions) {}
+
+  /**
+   * Read updater state for native and managed-renderer presentation.
+   * @returns a stable value until the next updater transition.
+   */
+  getState(): OtaUpdateState {
+    return this.state
+  }
 
   /**
    * Check once, sharing an active operation and avoiding a second download after readiness.
@@ -325,6 +343,7 @@ export class OtaUpdateController {
   check(): Promise<OtaUpdateCheckResult> {
     if (this.ready !== undefined) return Promise.resolve(this.ready)
     if (this.pending !== undefined) return this.pending
+    this.state = { status: 'checking' }
     const operation = this.run()
     this.pending = operation
     return operation
@@ -333,11 +352,35 @@ export class OtaUpdateController {
   private async run(): Promise<OtaUpdateCheckResult> {
     try {
       const result = await startOtaUpdate(this.options)
-      if (result.status === 'ready') this.ready = result
+      this.state = result
+      if (result.status === 'ready') {
+        this.ready = result
+        const updater = await resolveUpdater(this.options.updater)
+        this.installReadyUpdate = (onError) => {
+          updater.once('error', onError)
+          try {
+            updater.quitAndInstall(false, true)
+          } catch (error) {
+            updater.removeListener('error', onError)
+            throw error
+          }
+        }
+      }
       return result
     } finally {
       this.pending = undefined
     }
+  }
+
+  /**
+   * Install the downloaded update through the same orderly shutdown path used by forced releases.
+   * @returns false when no verified update is ready; otherwise true after installer invocation.
+   */
+  async install(): Promise<boolean> {
+    const install = this.installReadyUpdate
+    if (this.ready === undefined || install === undefined) return false
+    await this.options.onForceUpdateReady(install)
+    return true
   }
 }
 

@@ -29,10 +29,22 @@
       "path": "../../packages/boot/app-boot"
     },
     {
+      "path": "../../packages/util/atomic-write"
+    },
+    {
       "path": "../../packages/host/directory-picker-electron"
     },
     {
+      "path": "../../packages/client/connection/tsconfig.host.json"
+    },
+    {
       "path": "../../packages/client/ui-directory-picker-electron"
+    },
+    {
+      "path": "../../packages/client/ui-desktop-electron"
+    },
+    {
+      "path": "../../packages/subprocess/subprocess"
     }
   ]
 }

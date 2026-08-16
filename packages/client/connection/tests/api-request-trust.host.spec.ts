@@ -58,25 +58,72 @@ describe('isTrustedApiRequest', () => {
     expect(isTrustedApiRequest(request({
       ...remote,
       cookie: `theme=dark; ${REMOTE_ACCESS_COOKIE_NAME}=${encoded}; another=value=with=equals`,
-    }), ['harness.internal'], token)).toBe(true)
-    expect(isTrustedApiRequest(request(remote), ['harness.internal'], token)).toBe(false)
+    }), ['harness.internal'], { remoteAccessToken: token })).toBe(true)
+    expect(isTrustedApiRequest(request(remote), ['harness.internal'], { remoteAccessToken: token })).toBe(false)
     expect(isTrustedApiRequest(request({
       ...remote,
       cookie: `${REMOTE_ACCESS_COOKIE_NAME}=wrong-token-1234`,
-    }), ['harness.internal'], token)).toBe(false)
+    }), ['harness.internal'], { remoteAccessToken: token })).toBe(false)
     expect(isTrustedApiRequest(request({
       ...remote,
       cookie: `${REMOTE_ACCESS_COOKIE_NAME}=${encoded}; ${REMOTE_ACCESS_COOKIE_NAME}=${encoded}`,
-    }), ['harness.internal'], token)).toBe(false)
+    }), ['harness.internal'], { remoteAccessToken: token })).toBe(false)
   })
 
   it('does not require or grant remote access through a token on loopback', () => {
-    expect(isTrustedApiRequest(request({ host: '127.0.0.1:3080' }), [], 'remote-token-1234')).toBe(true)
+    expect(isTrustedApiRequest(request({ host: '127.0.0.1:3080' }), [], {
+      remoteAccessToken: 'remote-token-1234',
+    })).toBe(true)
     expect(isTrustedApiRequest(request({
       host: 'untrusted.internal:3080',
       cookie: `${REMOTE_ACCESS_COOKIE_NAME}=remote-token-1234`,
-    }), [], 'remote-token-1234')).toBe(false)
+    }), [], { remoteAccessToken: 'remote-token-1234' })).toBe(false)
     expect(isTrustedApiRequest(request({ host: 'harness.internal:3080' }), ['harness.internal'])).toBe(true)
+  })
+
+  it('selects independent cookie proofs for loopback and trusted non-loopback Hosts', () => {
+    const accessTokens = {
+      remoteAccessToken: 'remote-token-1234',
+      loopbackAccessToken: 'loopback-token-1234',
+    }
+    const remoteCookie = `${REMOTE_ACCESS_COOKIE_NAME}=remote-token-1234`
+    const loopbackCookie = `${REMOTE_ACCESS_COOKIE_NAME}=loopback-token-1234`
+
+    expect(isTrustedApiRequest(request({
+      host: 'harness.internal:3080',
+      cookie: remoteCookie,
+    }), ['harness.internal'], accessTokens)).toBe(true)
+    expect(isTrustedApiRequest(request({
+      host: 'harness.internal:3080',
+      cookie: loopbackCookie,
+    }), ['harness.internal'], accessTokens)).toBe(false)
+    expect(isTrustedApiRequest(request({
+      host: '127.0.0.1:3080',
+      cookie: remoteCookie,
+    }), ['harness.internal'], accessTokens)).toBe(false)
+    expect(isTrustedApiRequest(request({
+      host: '127.0.0.1:3080',
+      cookie: loopbackCookie,
+    }), ['harness.internal'], accessTokens)).toBe(true)
+  })
+
+  it('requires local proof when a public TCP forwarder appears as a loopback peer', () => {
+    const accessTokens = {
+      remoteAccessToken: 'remote-token-1234',
+      loopbackAccessToken: 'loopback-token-1234',
+    }
+    const forwardedHeaders = {
+      host: '127.0.0.1:3080',
+      origin: 'http://127.0.0.1:3080',
+    }
+    expect(isTrustedNodeApiRequest(nodeRequest({
+      ...forwardedHeaders,
+      cookie: `${REMOTE_ACCESS_COOKIE_NAME}=remote-token-1234`,
+    }, '127.0.0.1'), [], accessTokens)).toBe(false)
+    expect(isTrustedNodeApiRequest(nodeRequest({
+      ...forwardedHeaders,
+      cookie: `${REMOTE_ACCESS_COOKIE_NAME}=loopback-token-1234`,
+    }, '127.0.0.1'), [], accessTokens)).toBe(true)
   })
 
   it('refuses a loopback Host carried by a non-loopback TCP peer', () => {
@@ -85,12 +132,13 @@ describe('isTrustedApiRequest', () => {
       origin: 'http://127.0.0.1:3080',
       cookie: `${REMOTE_ACCESS_COOKIE_NAME}=remote-token-1234`,
     }
-    expect(isTrustedNodeApiRequest(nodeRequest(headers, '192.168.1.50'), [], 'remote-token-1234')).toBe(false)
-    expect(isTrustedNodeApiRequest(nodeRequest(headers, '::ffff:192.168.1.50'), [], 'remote-token-1234')).toBe(false)
-    expect(isTrustedNodeApiRequest(nodeRequest(headers), [], 'remote-token-1234')).toBe(false)
-    expect(isTrustedNodeApiRequest(nodeRequest(headers, '127.0.0.1'), [], 'remote-token-1234')).toBe(true)
-    expect(isTrustedNodeApiRequest(nodeRequest(headers, '::1'), [], 'remote-token-1234')).toBe(true)
-    expect(isTrustedNodeApiRequest(nodeRequest(headers, '::ffff:127.0.0.1'), [], 'remote-token-1234')).toBe(true)
+    const accessTokens = { remoteAccessToken: 'remote-token-1234' }
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '192.168.1.50'), [], accessTokens)).toBe(false)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '::ffff:192.168.1.50'), [], accessTokens)).toBe(false)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers), [], accessTokens)).toBe(false)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '127.0.0.1'), [], accessTokens)).toBe(true)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '::1'), [], accessTokens)).toBe(true)
+    expect(isTrustedNodeApiRequest(nodeRequest(headers, '::ffff:127.0.0.1'), [], accessTokens)).toBe(true)
   })
 
   it('matches Host, Origin, and trusted entries through WHATWG normalization (case, default port)', () => {

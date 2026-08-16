@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-electron-pocketbase-ota-updates.md
-2026-08-14-electron-pocketbase-ota-updates.md: bb0ce9cf9493279052962f251839c2ea2c78bfc5
-2026-08-14-electron-pocketbase-ota-updates.zh.md: a1fa4d83559d4ad3c209e546b33cd492459af00f
+2026-08-14-electron-pocketbase-ota-updates.md: 3baebf90703759b686fb914fb2b30ac8110b5a1f
+2026-08-14-electron-pocketbase-ota-updates.zh.md: c05b806b75ac3eb87475ffcffa65efabd0952be1

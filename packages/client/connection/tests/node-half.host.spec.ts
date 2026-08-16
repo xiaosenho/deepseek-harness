@@ -3,7 +3,7 @@ import { EventEmitter, once } from 'node:events'
 import { createServer, request as httpRequest } from 'node:http'
 import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ApiProxy } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -21,9 +21,12 @@ import {
   type HostConnectionHandle,
 } from '../src/index.ts'
 import { REMOTE_ACCESS_COOKIE_NAME } from '../src/remote-access.ts'
+import { WebSocketDownlinks } from '../src/websocket-downlink.ts'
 
 const REMOTE_ACCESS_TOKEN = 'remote-token-1234'
 const REMOTE_ACCESS_COOKIE = `${REMOTE_ACCESS_COOKIE_NAME}=${encodeURIComponent(REMOTE_ACCESS_TOKEN)}`
+const LOOPBACK_ACCESS_TOKEN = 'loopback-token-1234'
+const LOOPBACK_ACCESS_COOKIE = `${REMOTE_ACCESS_COOKIE_NAME}=${encodeURIComponent(LOOPBACK_ACCESS_TOKEN)}`
 
 /** Structural webServer fake recording both route registries. */
 function fakeHttpServer(
@@ -123,11 +126,24 @@ async function mounted(config?: ConnectionConfig): Promise<{
 }
 
 describe('connection node half', () => {
-  it('requires at least twelve characters for a configured remote-access token', () => {
+  it('requires at least twelve characters for each configured access token', () => {
     expect(new Config({ remoteAccessToken: 'twelve-chars' })).toMatchObject({
       remoteAccessToken: 'twelve-chars',
     })
+    expect(new Config({ loopbackAccessToken: 'twelve-chars' })).toMatchObject({
+      loopbackAccessToken: 'twelve-chars',
+    })
     expect(() => new Config({ remoteAccessToken: 'too-short' })).toThrow()
+    expect(() => new Config({ loopbackAccessToken: 'too-short' })).toThrow()
+  })
+
+  it('rejects identical remote and loopback access tokens at load', () => {
+    expect(() => {
+      apply(new Context(), {
+        remoteAccessToken: REMOTE_ACCESS_TOKEN,
+        loopbackAccessToken: REMOTE_ACCESS_TOKEN,
+      })
+    }).toThrow('remoteAccessToken and loopbackAccessToken must differ')
   })
 
   it('fails loud when the carrier cap cannot hold the configured image batch', () => {
@@ -218,6 +234,55 @@ describe('connection node half', () => {
     await dispose()
   })
 
+  it('requires local proof on HTTP and WebSocket when a forwarder presents a loopback peer', async () => {
+    const mux = vi.spyOn(WebSocketDownlinks.prototype, 'handleMux').mockImplementation(() => {})
+    const host = vi.spyOn(WebSocketDownlinks.prototype, 'handleHost').mockImplementation(() => {})
+    const { routes, upgrades, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+      loopbackAccessToken: LOOPBACK_ACCESS_TOKEN,
+    })
+    try {
+      const route = routes[0]!
+      for (const [headers, status] of [
+        [{ host: '127.0.0.1:3080', cookie: REMOTE_ACCESS_COOKIE }, 403],
+        [{ host: '127.0.0.1:3080', cookie: LOOPBACK_ACCESS_COOKIE }, 404],
+        [{ host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE }, 404],
+        [{ host: 'harness.example', cookie: LOOPBACK_ACCESS_COOKIE }, 403],
+      ] as const) {
+        const result = fakeResponse()
+        await route.handler(fakeRequest(headers, `${API_PATH}/session.list`, '127.0.0.1'), result.response)
+        expect(result.state.status).toBe(status)
+      }
+
+      for (const upgrade of upgrades) {
+        const deniedSocket = new PassThrough()
+        const chunks: Buffer[] = []
+        deniedSocket.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+        const ended = once(deniedSocket, 'end')
+        await upgrade.handler(fakeRequest({
+          host: '127.0.0.1:3080',
+          cookie: REMOTE_ACCESS_COOKIE,
+        }, upgrade.path, '127.0.0.1'), deniedSocket, Buffer.alloc(0))
+        await ended
+        expect(Buffer.concat(chunks).toString()).toContain('HTTP/1.1 403 Forbidden')
+
+        const admittedSocket = new PassThrough()
+        await upgrade.handler(fakeRequest({
+          host: '127.0.0.1:3080',
+          cookie: LOOPBACK_ACCESS_COOKIE,
+        }, upgrade.path, '127.0.0.1'), admittedSocket, Buffer.alloc(0))
+        admittedSocket.destroy()
+      }
+      expect(mux).toHaveBeenCalledTimes(1)
+      expect(host).toHaveBeenCalledTimes(1)
+    } finally {
+      await dispose()
+      mux.mockRestore()
+      host.mockRestore()
+    }
+  })
+
   it('rejects a loopback Host from a non-loopback peer on HTTP and WebSocket entries', async () => {
     const { routes, upgrades, dispose } = await mounted({
       trustedHosts: ['harness.example'],
@@ -294,6 +359,25 @@ describe('connection node half', () => {
     const read = fakeResponse()
     await routes[0]!.handler(fakeRequest({ host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE }), read.response)
     expect(read.state.status).not.toBe(403)
+    await dispose()
+  })
+
+  it('does not let a remote token impersonate local access to a loopback-only method', async () => {
+    const { routes, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+      loopbackAccessToken: LOOPBACK_ACCESS_TOKEN,
+    })
+    const route = routes[0]!
+    for (const [headers, status] of [
+      [{ host: '127.0.0.1:3080', cookie: REMOTE_ACCESS_COOKIE }, 403],
+      [{ host: '127.0.0.1:3080', cookie: LOOPBACK_ACCESS_COOKIE }, 404],
+      [{ host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE }, 403],
+    ] as const) {
+      const result = fakeResponse()
+      await route.handler(fakeRequest(headers, `${API_PATH}/host.pickDirectory`, '127.0.0.1'), result.response)
+      expect(result.state.status).toBe(status)
+    }
     await dispose()
   })
 
@@ -374,6 +458,53 @@ describe('connection node half', () => {
     expect(loopback.state.status).toBe(200)
     expect(calls).toEqual(['goals/create', 'goals/create'])
     await fiber.dispose()
+  })
+
+  it('selects the Host-specific token on dedicated and shared RPC paths', async () => {
+    const { routes, connection, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      remoteAccessToken: REMOTE_ACCESS_TOKEN,
+      loopbackAccessToken: LOOPBACK_ACCESS_TOKEN,
+    })
+    const calls: string[] = []
+    const handler = async (endpoint: string): Promise<{ ok: true; value: null }> => {
+      calls.push(endpoint)
+      return { ok: true, value: null }
+    }
+    const removeDedicated = connection.rpc.handle('/private', handler, { authority: 'loopback' })
+    const removeShared = connection.rpc.intercept(
+      '/api',
+      endpoint => endpoint === 'settings/read',
+      handler,
+      { authority: 'loopback' },
+    )
+    const request: ClientRequest = {
+      type: 'client-request',
+      rpcId: RpcId('rpc-host-specific-token'),
+      method: 'settings/read',
+      payload: {},
+    }
+    const targets = [
+      { route: routes.find(candidate => candidate.path === '/private')!, path: '/private/settings/read' },
+      { route: routes.find(candidate => candidate.path === API_PATH)!, path: '/api/settings/read' },
+    ]
+
+    for (const target of targets) {
+      for (const [headers, status] of [
+        [{ host: '127.0.0.1:3080', cookie: REMOTE_ACCESS_COOKIE }, 403],
+        [{ host: '127.0.0.1:3080', cookie: LOOPBACK_ACCESS_COOKIE }, 200],
+        [{ host: 'harness.example', cookie: REMOTE_ACCESS_COOKIE }, 200],
+        [{ host: 'harness.example', cookie: LOOPBACK_ACCESS_COOKIE }, 403],
+      ] as const) {
+        const result = fakeResponse()
+        await target.route.handler(fakePost(headers, target.path, request), result.response)
+        expect(result.state.status).toBe(status)
+      }
+    }
+    expect(calls).toEqual(['settings/read', 'settings/read', 'settings/read', 'settings/read'])
+    await removeShared()
+    await removeDedicated()
+    await dispose()
   })
 
   it('extends dedicated loopback RPC authority only through a configured token', async () => {

@@ -154,6 +154,7 @@ export function SidebarRoot({
             <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
           </button>
         </Tooltip>
+        {renderSlot('sidebar.brand.badge', { wide })}
       </div>
 
       {/* Expanded, the button carries its own label — tooltip only on the rail. */}

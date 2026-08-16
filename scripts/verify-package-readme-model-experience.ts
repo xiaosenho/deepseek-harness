@@ -87,6 +87,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-workspace': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/directory-picker-flows': { kind: 'none', reason: 'Browser-side directory-picker presentation library; registers nothing model-facing.' },
   'packages/client/ui-directory-picker-browse': { kind: 'none', reason: 'Browser-side directory-browsing surface; registers nothing model-facing.' },
+  'packages/client/ui-desktop-electron': { kind: 'none', reason: 'Browser-side Electron settings and update surface; registers nothing model-facing.' },
   'packages/client/ui-directory-picker-electron': { kind: 'none', reason: 'Browser-side per-connection Electron directory-picker surface; registers nothing model-facing.' },
   'packages/client/ui-directory-picker-native': { kind: 'none', reason: 'Browser-side surface driving the host OS chooser; registers nothing model-facing.' },
   'packages/client/ui-theme': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },

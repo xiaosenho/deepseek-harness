@@ -25,9 +25,9 @@ function assertNever(value: never): never {
 
 /** Commands contributed by the Electron-owned remote-access controller. */
 export interface RemoteAccessMenuCommands {
-  /** Start the authenticated LAN listener. */
+  /** Start the configured authenticated remote transport. */
   start: () => void
-  /** Stop the LAN listener and return to loopback-only mode. */
+  /** Stop the active remote transport and return to loopback-only mode. */
   stop: () => void
   /** Present the current authenticated URL in a native dialog. */
   showDetails: () => void
@@ -53,6 +53,8 @@ export interface ApplicationMenuOptions {
   platform: NodeJS.Platform
   /** Shared startup/manual OTA controller operation. */
   checkForUpdates: () => Promise<OtaUpdateCheckResult>
+  /** Install a verified update already prepared by the controller. */
+  installUpdate: () => Promise<boolean>
   /** Native message-box presenter. */
   showMessageBox: ShowMessageBox
   /** Electron-owned remote access; absent for an external WebUI. */
@@ -79,7 +81,10 @@ function resultDialog(
         ...base,
         type: 'info',
         message: `${applicationName} ${result.version} is ready to install.`,
-        detail: 'Quit the application to install the update. The next launch will use the new version.',
+        detail: result.changelog,
+        buttons: ['Install and Restart', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
       }
     case 'failed':
       return {
@@ -108,7 +113,8 @@ export async function runManualUpdateCheck(
   item.label = 'Checking for Updates...'
   try {
     const result = await options.checkForUpdates()
-    await options.showMessageBox(resultDialog(options.applicationName, options.currentVersion, result))
+    const dialog = await options.showMessageBox(resultDialog(options.applicationName, options.currentVersion, result))
+    if (result.status === 'ready' && dialog.response === 0) await options.installUpdate()
   } finally {
     item.label = 'Check for Updates...'
     item.enabled = true

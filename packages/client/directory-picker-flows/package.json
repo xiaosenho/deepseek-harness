@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-directory-picker-flows",
   "description": "Inlined directory-picker presentation library shared by native, browse, and Electron client plugins",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.6",
   "publishConfig": {
     "access": "public"
   },

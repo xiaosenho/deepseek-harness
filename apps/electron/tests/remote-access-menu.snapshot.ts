@@ -43,6 +43,7 @@ function options(
     applicationName: 'DeepSeek Harness',
     checkForUpdates: async () => ({ status: 'current' }),
     currentVersion: '0.1.0',
+    installUpdate: async () => true,
     platform,
     showMessageBox: async () => ({ checkboxChecked: false, response: 0 }),
     ...(state === undefined ? {} : { remoteAccess: { commands, state } }),
@@ -101,10 +102,10 @@ function requiredRemoteMenu(
 function projection(): object {
   const platforms = ['darwin', 'win32', 'linux'] as const
   const states = {
-    off: { enabled: false, transitioning: false },
-    on: { enabled: true, transitioning: false, url: REMOTE_URL },
-    changing: { enabled: true, transitioning: true, url: REMOTE_URL },
-    'on-without-url': { enabled: true, transitioning: false },
+    off: { enabled: false, preferredMode: 'lan', transitioning: false },
+    on: { enabled: true, mode: 'lan', preferredMode: 'lan', transitioning: false, url: REMOTE_URL },
+    changing: { enabled: true, mode: 'frp', preferredMode: 'frp', transitioning: true, url: REMOTE_URL },
+    'on-without-url': { enabled: true, mode: 'frp', preferredMode: 'frp', transitioning: false },
   } satisfies Record<string, RemoteAccessState>
   return {
     externalWebUiRemoteMenuPresent: Object.fromEntries(platforms.map(platform => [

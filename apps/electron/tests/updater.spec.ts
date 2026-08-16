@@ -103,7 +103,11 @@ describe('Electron PocketBase OTA updater', () => {
     const updater = fakeUpdater()
 
     await expect(startOtaUpdate(options({ updater })))
-      .resolves.toEqual({ status: 'ready', version: '0.2.0' })
+      .resolves.toEqual({
+        status: 'ready',
+        version: '0.2.0',
+        changelog: 'Fixes and stability improvements',
+      })
 
     expect(updater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: ARTIFACT_BASE_URL })
     expect(updater.allowDowngrade).toBe(false)
@@ -121,7 +125,11 @@ describe('Electron PocketBase OTA updater', () => {
     const fetch = vi.fn().mockResolvedValue(response([release({ is_force: true })]))
 
     await expect(startOtaUpdate(options({ fetch, onForceUpdateReady, updater })))
-      .resolves.toEqual({ status: 'ready', version: '0.2.0' })
+      .resolves.toEqual({
+        status: 'ready',
+        version: '0.2.0',
+        changelog: 'Fixes and stability improvements',
+      })
 
     expect(onForceUpdateReady).toHaveBeenCalledOnce()
     expect(updater.once).toHaveBeenCalledWith('error', onInstallError)
@@ -208,9 +216,17 @@ describe('Electron PocketBase OTA updater', () => {
     expect(second).toBe(first)
     expect(fetch).toHaveBeenCalledOnce()
     resolveFetch?.(response([release()]))
-    await expect(first).resolves.toEqual({ status: 'ready', version: '0.2.0' })
+    await expect(first).resolves.toEqual({
+      status: 'ready',
+      version: '0.2.0',
+      changelog: 'Fixes and stability improvements',
+    })
 
-    await expect(controller.check()).resolves.toEqual({ status: 'ready', version: '0.2.0' })
+    await expect(controller.check()).resolves.toEqual({
+      status: 'ready',
+      version: '0.2.0',
+      changelog: 'Fixes and stability improvements',
+    })
     expect(fetch).toHaveBeenCalledOnce()
     expect(updater.downloadUpdate).toHaveBeenCalledOnce()
   })

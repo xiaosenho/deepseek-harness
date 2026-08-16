@@ -14,6 +14,7 @@ const REMOTE_URL = 'http://192.168.1.5:43128/#dsh-access=fresh-token'
 
 function options(initial: RemoteAccessState = {
   enabled: false,
+  preferredMode: 'lan',
   transitioning: false,
 }): NativeRemoteAccessOptions & {
   navigate: Mock<(url: URL) => void>
@@ -25,9 +26,10 @@ function options(initial: RemoteAccessState = {
 } {
   let state = initial
   const setEnabled = vi.fn(async (enabled: boolean): Promise<RemoteAccessTransitionResult> => {
+    const preferredMode = state.preferredMode
     state = enabled
-      ? { enabled: true, transitioning: false, url: REMOTE_URL }
-      : { enabled: false, transitioning: false }
+      ? { enabled: true, mode: preferredMode, preferredMode, transitioning: false, url: REMOTE_URL }
+      : { enabled: false, preferredMode, transitioning: false }
     return {
       succeeded: true,
       navigationUrl: new URL(enabled
@@ -67,6 +69,19 @@ describe('native Electron remote-access commands', () => {
     expect(o.refreshMenu).not.toHaveBeenCalled()
   })
 
+  it('warns that FRP publishes publicly and plaintext HTTP can be intercepted', async () => {
+    const o = options({ enabled: false, preferredMode: 'frp', transitioning: false })
+
+    await expect(changeRemoteAccessFromMenu(true, o)).resolves.toBe(false)
+    const dialog = o.showMessageBox.mock.calls[0]?.[0]
+    expect(dialog).toMatchObject({
+      message: 'Publish remote access through FRP?',
+      defaultId: 1,
+    })
+    expect(dialog?.detail).toMatch(/public FRP server.*plaintext HTTP.*interception/u)
+    expect(o.setEnabled).not.toHaveBeenCalled()
+  })
+
   it('starts access, refreshes native state, navigates, and presents the URL', async () => {
     const o = options()
     o.showMessageBox
@@ -84,7 +99,13 @@ describe('native Electron remote-access commands', () => {
   })
 
   it('copies the URL from the ready dialog', async () => {
-    const o = options({ enabled: true, transitioning: false, url: REMOTE_URL })
+    const o = options({
+      enabled: true,
+      mode: 'lan',
+      preferredMode: 'lan',
+      transitioning: false,
+      url: REMOTE_URL,
+    })
     o.showMessageBox.mockResolvedValueOnce({ checkboxChecked: false, response: 0 })
 
     await expect(showRemoteAccessDetails(o)).resolves.toBe(true)
@@ -92,7 +113,13 @@ describe('native Electron remote-access commands', () => {
   })
 
   it('stops access and navigates to the replacement loopback origin', async () => {
-    const o = options({ enabled: true, transitioning: false, url: REMOTE_URL })
+    const o = options({
+      enabled: true,
+      mode: 'lan',
+      preferredMode: 'lan',
+      transitioning: false,
+      url: REMOTE_URL,
+    })
     o.showMessageBox.mockResolvedValueOnce({ checkboxChecked: false, response: 0 })
 
     await expect(changeRemoteAccessFromMenu(false, o)).resolves.toBe(true)
@@ -126,8 +153,14 @@ describe('native Electron remote-access commands', () => {
   })
 
   it.each([
-    { enabled: false, transitioning: true } as const,
-    { enabled: true, transitioning: false, url: REMOTE_URL } as const,
+    { enabled: false, preferredMode: 'lan', transitioning: true } as const,
+    {
+      enabled: true,
+      mode: 'lan',
+      preferredMode: 'lan',
+      transitioning: false,
+      url: REMOTE_URL,
+    } as const,
   ])('rejects an obsolete transition request from state $enabled/$transitioning', async (state) => {
     const o = options(state)
     await expect(changeRemoteAccessFromMenu(state.enabled, o)).resolves.toBe(false)
@@ -137,7 +170,19 @@ describe('native Electron remote-access commands', () => {
   it('rechecks state after confirmation before starting a transition', async () => {
     const o = options()
     o.showMessageBox.mockImplementationOnce(async () => {
-      o.setState({ enabled: false, transitioning: true })
+      o.setState({ enabled: false, preferredMode: 'lan', transitioning: true })
+      return { checkboxChecked: false, response: 0 }
+    })
+
+    await expect(changeRemoteAccessFromMenu(true, o)).resolves.toBe(false)
+    expect(o.setEnabled).not.toHaveBeenCalled()
+    expect(o.refreshMenu).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not start a transport selected after its confirmation dialog opened', async () => {
+    const o = options()
+    o.showMessageBox.mockImplementationOnce(async () => {
+      o.setState({ enabled: false, preferredMode: 'frp', transitioning: false })
       return { checkboxChecked: false, response: 0 }
     })
 
@@ -156,9 +201,15 @@ describe('native Electron remote-access commands', () => {
   })
 
   it.each([
-    { enabled: false, transitioning: false } as const,
-    { enabled: true, transitioning: true, url: REMOTE_URL } as const,
-    { enabled: true, transitioning: false } as const,
+    { enabled: false, preferredMode: 'lan', transitioning: false } as const,
+    {
+      enabled: true,
+      mode: 'frp',
+      preferredMode: 'frp',
+      transitioning: true,
+      url: REMOTE_URL,
+    } as const,
+    { enabled: true, mode: 'frp', preferredMode: 'frp', transitioning: false } as const,
   ])('refuses details and copy without one settled URL', async (state) => {
     const o = options(state)
     await expect(showRemoteAccessDetails(o)).resolves.toBe(false)
@@ -168,10 +219,18 @@ describe('native Electron remote-access commands', () => {
   })
 
   it('refuses to copy a URL that rotated while its detail dialog was open', async () => {
-    const o = options({ enabled: true, transitioning: false, url: REMOTE_URL })
+    const o = options({
+      enabled: true,
+      mode: 'lan',
+      preferredMode: 'lan',
+      transitioning: false,
+      url: REMOTE_URL,
+    })
     o.showMessageBox.mockImplementationOnce(async () => {
       o.setState({
         enabled: true,
+        mode: 'lan',
+        preferredMode: 'lan',
         transitioning: false,
         url: 'http://192.168.1.5:43129/#dsh-access=replacement',
       })
@@ -188,7 +247,13 @@ describe('native Electron remote-access commands', () => {
   it.each([new Error('clipboard denied'), 'clipboard unavailable'])(
     'reports clipboard failure %s through a native dialog',
     async (failure) => {
-      const o = options({ enabled: true, transitioning: false, url: REMOTE_URL })
+      const o = options({
+        enabled: true,
+        mode: 'lan',
+        preferredMode: 'lan',
+        transitioning: false,
+        url: REMOTE_URL,
+      })
       o.writeText.mockImplementationOnce(() => { throw failure })
 
       await expect(copyRemoteAccessUrl(o)).resolves.toBe(false)

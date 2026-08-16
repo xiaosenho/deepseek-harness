@@ -11,6 +11,7 @@ import {
   assertTrustedAuthority,
   isTrustedApiRequest,
   isTrustedNodeApiRequest,
+  type ApiAccessTokens,
 } from './api-request-trust.ts'
 import { HostConnectionService } from './rpc-host.ts'
 import { rejectWebSocketUpgrade, WebSocketDownlinks } from './websocket-downlink.ts'
@@ -50,7 +51,7 @@ function assertImageBodyCapacity(ctx: Context, maxRequestBodyBytes: number): voi
 /** Services required before providing Connection; API Proxy is an optional `/api` fallback. */
 export const inject = ['webServer']
 
-/** Plugin config: the deployment's non-loopback serving authorities. */
+/** Plugin config: serving authorities and their optional cookie proofs. */
 export interface ConnectionConfig {
   /**
    * Authorities this deployment serves beyond loopback: exact `host:port`, or
@@ -66,10 +67,19 @@ export interface ConnectionConfig {
    * Shared secret of at least 12 characters required from trusted non-loopback
    * authorities. A valid secret grants access to token-eligible Host methods;
    * explicitly loopback-only methods remain unavailable. Loopback requests
-   * never require it. When omitted, `trustedHosts` retains its existing
-   * authority-only behavior.
+   * never use it. When omitted, `trustedHosts` retains its existing
+   * authority-only behavior. It must differ from `loopbackAccessToken` when
+   * both are configured.
    */
   remoteAccessToken?: string
+  /**
+   * Shared secret of at least 12 characters required from every loopback Host.
+   * This protects a loopback-bound server when a local forwarder makes public
+   * TCP traffic appear to have a loopback peer. A `remoteAccessToken` cookie
+   * never substitutes for this proof. It must differ from `remoteAccessToken`
+   * when both are configured.
+   */
+  loopbackAccessToken?: string
   /** Maximum buffered JSON body for every `/api` request. */
   maxRequestBodyBytes?: number
 }
@@ -77,6 +87,7 @@ export interface ConnectionConfig {
 export const Config: z<ConnectionConfig> = z.object({
   trustedHosts: z.array(String).default([]),
   remoteAccessToken: z.string().min(12).role('secret'),
+  loopbackAccessToken: z.string().min(12).role('secret'),
   maxRequestBodyBytes: z.natural().min(1).default(DEFAULT_MAX_REQUEST_BODY_BYTES),
 })
 
@@ -145,13 +156,18 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   // The Loader resolves schema defaults; hand-built test contexts may pass none.
   const trustedHosts = config?.trustedHosts ?? []
   const remoteAccessToken = config?.remoteAccessToken
+  const loopbackAccessToken = config?.loopbackAccessToken
+  if (remoteAccessToken !== undefined && remoteAccessToken === loopbackAccessToken) {
+    throw new Error('client-connection: remoteAccessToken and loopbackAccessToken must differ')
+  }
+  const accessTokens: ApiAccessTokens = { remoteAccessToken, loopbackAccessToken }
   const privilegedTrustedHosts = remoteAccessToken === undefined ? [] : trustedHosts
   const maxRequestBodyBytes = config?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
   // Config boundary: a malformed entry fails the load loudly here rather than
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
   if (ctx.get('apiProxy') !== undefined) assertImageBodyCapacity(ctx, maxRequestBodyBytes)
-  const connection = new HostConnectionService(ctx, trustedHosts, remoteAccessToken)
+  const connection = new HostConnectionService(ctx, trustedHosts, accessTokens)
   const fetchHandler = connection.createSharedFetchHandler(API_PATH, {
     async fetch(request) {
       const pathname = new URL(request.url).pathname
@@ -161,7 +177,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       const loopbackOnly = method !== undefined && LOOPBACK_ONLY_METHODS.has(method)
       if (method !== undefined
         && (loopbackOnly || PRIVILEGED_METHODS.has(method))
-        && !isTrustedApiRequest(request, loopbackOnly ? [] : privilegedTrustedHosts, remoteAccessToken)) {
+        && !isTrustedApiRequest(request, loopbackOnly ? [] : privilegedTrustedHosts, accessTokens)) {
         return new Response('forbidden', { status: 403 })
       }
       if (request.method === 'GET' && (pathname === MUX_EVENTS_PATH || pathname === HOST_EVENTS_PATH)) {
@@ -179,7 +195,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
     kind: 'prefix',
     path: API_PATH,
     handler: async (req, res) => {
-      if (!isTrustedNodeApiRequest(req, trustedHosts, remoteAccessToken)) {
+      if (!isTrustedNodeApiRequest(req, trustedHosts, accessTokens)) {
         res.writeHead(403)
         res.end('forbidden')
         return
@@ -198,7 +214,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       apiCtx.effect(() => apiCtx.webServer.registerUpgrade({
         path,
         handler: (req, socket, head) => {
-          if (!isTrustedNodeApiRequest(req, trustedHosts, remoteAccessToken)) {
+          if (!isTrustedNodeApiRequest(req, trustedHosts, accessTokens)) {
             rejectWebSocketUpgrade(socket)
             return
           }

@@ -73,7 +73,7 @@ export default {
   detectUpdateChannel: false,
   npmRebuild: false,
   directories: { output: '../../dist/electron' },
-  files: ['lib/*.js', 'resources/*.yml', 'package.json'],
+  files: ['lib/*.cjs', 'lib/*.js', 'resources/*.yml', 'package.json'],
   extraResources: [...workspaceRuntime, legalResources],
   publish: {
     provider: 'generic',

@@ -7,7 +7,7 @@ import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
 
 export type {
-  SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarRootInjected,
+  SidebarBrandBadgeOwnerProps, SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarRootInjected,
   SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
@@ -48,6 +48,7 @@ export function apply(ctx: ClientContext): void {
         'sidebar.workspaces': { kind: 'single', scope: 'root' },
         'sidebar.settings': { kind: 'single', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },
+        'sidebar.brand.badge': { kind: 'list', scope: 'root' },
       },
       inject: injectProps,
     }, SidebarRoot),

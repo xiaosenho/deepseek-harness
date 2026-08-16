@@ -88,6 +88,7 @@
    right edge; the rail gives every control the same base left anchor before
    the shared entry translation is applied. */
 .logoRow {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;

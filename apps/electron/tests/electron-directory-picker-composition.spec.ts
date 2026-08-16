@@ -1,11 +1,12 @@
 /**
- * REAL-composition coverage for the Windows Electron directory-picker overlay:
+ * REAL-composition coverage for the Electron directory-picker overlay:
  * the shipped patch is applied by Include and both replacement packages pass
  * through the vendored Loader before their active entries and capability are
  * observed.
  */
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -20,7 +21,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 const AUTO = '@deepseek-ai/dsh-host-directory-picker-auto'
 const HOST = '@deepseek-ai/dsh-host-directory-picker-electron'
 const CLIENT = '@deepseek-ai/dsh-client-ui-directory-picker-electron'
-const OVERLAY_PATH = fileURLToPath(new URL('../resources/windows-directory-picker.cordis.patch.yml', import.meta.url))
+const OVERLAY_PATH = fileURLToPath(new URL('../resources/electron-directory-picker.cordis.patch.yml', import.meta.url))
 
 const originalSend = Object.getOwnPropertyDescriptor(process, 'send')
 const originalConnected = Object.getOwnPropertyDescriptor(process, 'connected')
@@ -67,7 +68,16 @@ afterEach(async () => {
   }
 })
 
-describe('Windows Electron directory-picker real Loader composition', () => {
+describe('Electron directory-picker real Loader composition', () => {
+  it('declares both overlay plugins in the Web profile bundle resolver', () => {
+    const manifest = JSON.parse(readFileSync(fileURLToPath(new URL(
+      '../../../packages/bundle/web-app/package.json',
+      import.meta.url,
+    )), 'utf8')) as { dependencies: Record<string, string> }
+    expect(manifest.dependencies[HOST]).toBe('workspace:^')
+    expect(manifest.dependencies[CLIENT]).toBe('workspace:^')
+  })
+
   it('replaces the adaptive row with the native-browse host and client selector', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-electron-picker-loader-'))
     const configPath = join(root, 'cordis.yml')

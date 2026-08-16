@@ -11,7 +11,7 @@ const REMOTE_ACCESS_SESSION_MARKER = `${REMOTE_ACCESS_COOKIE_NAME}_present`
 interface BrowserGlobals {
   document?: Pick<Document, 'cookie'>
   history?: Pick<History, 'replaceState' | 'state'>
-  location?: Pick<Location, 'hash' | 'pathname' | 'replace' | 'search'>
+  location?: Pick<Location, 'hash' | 'pathname' | 'protocol' | 'replace' | 'search'>
   sessionStorage?: Pick<Storage, 'getItem' | 'setItem'>
 }
 
@@ -34,10 +34,11 @@ function writeSessionMarker(browser: BrowserGlobals): boolean {
 }
 
 /**
- * Move one fragment token into an API-path Strict session cookie, mark this
- * tab's origin as credential-bearing, then replace the current history entry
- * without that token. Other fragment parameters keep their order. Duplicate
- * token parameters are removed without choosing one. When session storage is
+ * Move one fragment token into an API-path Strict session cookie, adding the
+ * Secure attribute on HTTPS origins, mark this tab's origin as
+ * credential-bearing, then replace the current history entry without that
+ * token. Other fragment parameters keep their order. Duplicate token
+ * parameters are removed without choosing one. When session storage is
  * available, a newly stored token uses a same-origin replacement navigation
  * so the network stack observes the cookie before the WebUI opens its API and
  * WebSocket connections.
@@ -64,8 +65,9 @@ export function consumeRemoteAccessFragment(): boolean {
   const storedToken = tokens.length === 1 && token !== undefined && token !== ''
   let markerWritten = false
   if (storedToken) {
-    pageDocument.cookie = `${REMOTE_ACCESS_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Strict`
-    pageDocument.cookie = `${REMOTE_ACCESS_COOKIE_NAME}=${encodeURIComponent(token)}; Path=${API_PATH}; SameSite=Strict`
+    const secureAttribute = pageLocation.protocol === 'https:' ? '; Secure' : ''
+    pageDocument.cookie = `${REMOTE_ACCESS_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Strict${secureAttribute}`
+    pageDocument.cookie = `${REMOTE_ACCESS_COOKIE_NAME}=${encodeURIComponent(token)}; Path=${API_PATH}; SameSite=Strict${secureAttribute}`
     markerWritten = writeSessionMarker(browser)
   }
   const remaining = fragment.toString()

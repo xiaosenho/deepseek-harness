@@ -1,6 +1,6 @@
 /** Background WebUI process ownership for the Electron main process. */
 
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
@@ -8,9 +8,9 @@ import { fileURLToPath } from 'node:url'
 import { ElectronDirectoryPickerBridge, type ElectronDirectoryPickerHandler } from './directory-picker-bridge.ts'
 import { formatRemoteAccessUrl } from './remote-access.ts'
 import { LineBuffer, parseReadyUrls } from './readiness.ts'
+import { signalProcessTree, stopProcessTree } from './process-tree.ts'
 
 const STARTUP_TIMEOUT_MS = 45_000
-const SHUTDOWN_GRACE_MS = 3_000
 const ERROR_DETAIL_LIMIT = 4_096
 
 /** Resolve the packaged dsh CLI without requiring a package main export. */
@@ -19,15 +19,19 @@ function resolveDshBin(): string {
   return join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'lib', 'bin.js')
 }
 
-/** Resolve the Electron-owned Web profile overlay for one platform. */
-function resolvePlatformOverlay(platform: NodeJS.Platform): string | undefined {
-  if (platform !== 'win32') return undefined
-  return fileURLToPath(new URL('../resources/windows-directory-picker.cordis.patch.yml', import.meta.url))
+/** Resolve the Electron-owned native and remote-browse directory-picker overlay. */
+function resolveElectronOverlay(): string {
+  return fileURLToPath(new URL('../resources/electron-directory-picker.cordis.patch.yml', import.meta.url))
 }
 
 /** Resolve the overlay that exposes the Electron-owned Web profile to LAN clients. */
 function resolveLanAccessOverlay(): string {
   return fileURLToPath(new URL('../resources/lan-access.cordis.patch.yml', import.meta.url))
+}
+
+/** Resolve the overlay that keeps an FRP-forwarded WebUI on loopback. */
+function resolveReverseAccessOverlay(): string {
+  return fileURLToPath(new URL('../resources/reverse-access.cordis.patch.yml', import.meta.url))
 }
 
 /** Resolve the overlay that confines the Electron-owned Web profile to loopback. */
@@ -36,12 +40,12 @@ function resolveLoopbackAccessOverlay(): string {
 }
 
 /** Network exposure selected for one Electron-owned WebUI process. */
-export type WebBackendMode = 'loopback' | 'lan'
+export type WebBackendMode = 'loopback' | 'lan' | 'frp'
 
 /**
  * Build the packaged CLI arguments for the Electron-owned WebUI.
  * @param platform - operating system running the desktop host.
- * @param mode - loopback-only or authenticated LAN exposure.
+ * @param mode - loopback-only, authenticated LAN, or loopback-forwarded FRP exposure.
  * @param dshBin - resolved packaged CLI entry.
  * @returns arguments passed to the Electron executable in Node mode.
  */
@@ -50,13 +54,18 @@ export function buildBackendArgs(
   mode: WebBackendMode,
   dshBin = resolveDshBin(),
 ): string[] {
-  const networkOverlay = mode === 'lan' ? resolveLanAccessOverlay() : resolveLoopbackAccessOverlay()
-  const platformOverlay = resolvePlatformOverlay(platform)
+  const networkOverlay = mode === 'lan'
+    ? resolveLanAccessOverlay()
+    : mode === 'frp'
+      ? resolveReverseAccessOverlay()
+      : resolveLoopbackAccessOverlay()
+  void platform
+  const electronOverlay = resolveElectronOverlay()
   return [
     '--expose-internals',
     dshBin,
     'web',
-    ...(platformOverlay === undefined ? [] : ['--patch', platformOverlay]),
+    '--patch', electronOverlay,
     '--patch',
     networkOverlay,
     '--port',
@@ -78,6 +87,10 @@ export interface WebBackendLocation {
   loopbackUrl: URL
   /** Token-bearing address shown for access from a remote browser. */
   remoteAccessUrl?: URL
+  /** Main-process-only bearer used to derive an FRP public URL. */
+  remoteAccessToken?: string
+  /** Main-process-only bearer required from the local renderer while FRP is active. */
+  rendererAccessToken?: string
 }
 
 interface WebBackendRun {
@@ -88,62 +101,43 @@ interface WebBackendRun {
   stopTask?: Promise<void>
 }
 
+interface WebBackendOptions {
+  /** Complete process-tree cleanup overridden by lifecycle tests. */
+  stopTree?: typeof stopProcessTree
+}
+
 function stopDirectoryPicker(run: WebBackendRun): Promise<void> {
   run.directoryPickerStop ??= run.directoryPickerBridge.stop()
   return run.directoryPickerStop
 }
 
-function backendEnvironment(remoteAccessToken: string | undefined): NodeJS.ProcessEnv {
+function backendEnvironment(
+  remoteAccessToken: string | undefined,
+  loopbackAccessToken: string | undefined,
+  trustedAuthority: string | undefined,
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
   delete env.DSH_ELECTRON_REMOTE_ACCESS_TOKEN
+  delete env.DSH_ELECTRON_LOOPBACK_ACCESS_TOKEN
+  delete env.DSH_ELECTRON_REMOTE_ACCESS_AUTHORITY
   if (remoteAccessToken !== undefined) env.DSH_ELECTRON_REMOTE_ACCESS_TOKEN = remoteAccessToken
+  if (loopbackAccessToken !== undefined) env.DSH_ELECTRON_LOOPBACK_ACCESS_TOKEN = loopbackAccessToken
+  if (trustedAuthority !== undefined) env.DSH_ELECTRON_REMOTE_ACCESS_AUTHORITY = trustedAuthority
   return env
-}
-
-function signalTree(child: ChildProcess, signal: 'SIGTERM' | 'SIGKILL'): void {
-  const pid = child.pid
-  if (pid === undefined) return
-  if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
-    return
-  }
-  try {
-    process.kill(-pid, signal)
-  } catch {
-    // Exit can race either shutdown tier; an absent process group is already quiescent.
-  }
-}
-
-function treeIsAlive(child: ChildProcess): boolean {
-  const pid = child.pid
-  if (pid === undefined) return false
-  if (process.platform === 'win32') return child.exitCode === null && child.signalCode === null
-  try {
-    process.kill(-pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function waitForTreeExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
-  while (treeIsAlive(child)) {
-    if (Date.now() >= deadline) return false
-    await new Promise(resolve => setTimeout(resolve, 25))
-  }
-  return true
 }
 
 /** Owns the background WebUI command from readiness through shutdown. */
 export class WebBackend {
   private run: WebBackendRun | undefined
 
+  /** @param options - process-tree integration overridden by lifecycle tests. */
+  constructor(private readonly options: WebBackendOptions = {}) {}
+
   /**
    * Start the configured WebUI command and wait for its readiness line.
-   * @param mode - loopback-only or authenticated LAN exposure.
+   * @param mode - loopback-only, authenticated LAN, or loopback-forwarded FRP exposure.
    * @param cwd - working directory used by the command and Harness tools.
-   * @param onUnexpectedExit - called when a ready command exits before desktop shutdown.
+   * @param onUnexpectedExit - called after cleanup succeeds or its failure is logged.
    * @param pickDirectory - native directory dialog owned by the Electron main process.
    * @returns the loopback renderer URL and optional token-bearing remote-access URL.
    */
@@ -152,12 +146,22 @@ export class WebBackend {
     cwd: string,
     onUnexpectedExit: (code: number | null, signal: NodeJS.Signals | null) => void,
     pickDirectory: ElectronDirectoryPickerHandler,
+    trustedAuthority?: string,
   ): Promise<WebBackendLocation> {
     if (this.run !== undefined) throw new Error('Electron WebUI command is already running')
-    const remoteAccessToken = mode === 'lan' ? createRemoteAccessToken() : undefined
+    if (mode === 'frp' && trustedAuthority === undefined) {
+      throw new Error('FRP WebUI requires a trusted public authority')
+    }
+    const remoteAccessToken = mode === 'loopback' ? undefined : createRemoteAccessToken()
+    let loopbackAccessToken: string | undefined
+    if (mode === 'frp') {
+      do {
+        loopbackAccessToken = createRemoteAccessToken()
+      } while (loopbackAccessToken === remoteAccessToken)
+    }
     const child = spawn(process.execPath, buildBackendArgs(process.platform, mode), {
       cwd,
-      env: backendEnvironment(remoteAccessToken),
+      env: backendEnvironment(remoteAccessToken, loopbackAccessToken, trustedAuthority),
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       detached: process.platform !== 'win32',
       windowsHide: true,
@@ -165,14 +169,14 @@ export class WebBackend {
     const stdout = child.stdout
     const stderrStream = child.stderr
     if (stdout === null || stderrStream === null) {
-      signalTree(child, 'SIGKILL')
+      signalProcessTree(child, 'SIGKILL')
       throw new Error('Electron WebUI command has no output pipes')
     }
     let directoryPickerBridge: ElectronDirectoryPickerBridge
     try {
       directoryPickerBridge = new ElectronDirectoryPickerBridge(child, pickDirectory)
     } catch (error: unknown) {
-      signalTree(child, 'SIGKILL')
+      signalProcessTree(child, 'SIGKILL')
       throw error
     }
     const run: WebBackendRun = { child, directoryPickerBridge, stopping: false }
@@ -197,6 +201,10 @@ export class WebBackend {
           clearTimeout(timer)
           resolve({
             loopbackUrl: urls.loopbackUrl,
+            ...mode !== 'frp' || remoteAccessToken === undefined ? {} : { remoteAccessToken },
+            ...mode !== 'frp' || loopbackAccessToken === undefined
+              ? {}
+              : { rendererAccessToken: loopbackAccessToken },
             ...urls.lanUrl === undefined || remoteAccessToken === undefined
               ? {}
               : { remoteAccessUrl: formatRemoteAccessUrl(urls.lanUrl, remoteAccessToken) },
@@ -209,22 +217,41 @@ export class WebBackend {
         stderr = `${stderr}${text}`.slice(-ERROR_DETAIL_LIMIT)
       })
       child.once('error', (error) => {
-        void stopDirectoryPicker(run).finally(() => {
-          if (this.run === run) this.run = undefined
-        })
         clearTimeout(timer)
-        if (!ready) reject(error)
+        void this.cleanupRun(run).then(
+          () => {
+            if (!ready) reject(error)
+          },
+          (cleanupError: unknown) => {
+            if (!ready) {
+              reject(new AggregateError(
+                [error, cleanupError],
+                'WebUI startup and cleanup both failed',
+              ))
+            } else {
+              console.error('WebUI process-tree cleanup failed after a child-process error.', cleanupError)
+            }
+          },
+        )
       })
       child.once('exit', (code, signal) => {
-        void stopDirectoryPicker(run).finally(() => {
-          if (this.run === run) this.run = undefined
-        })
         clearTimeout(timer)
         if (!ready) {
           const detail = stderr.trim()
-          reject(new Error(`WebUI command exited with code ${String(code)}${detail === '' ? '' : `\n\n${detail}`}`))
+          const failure = new Error(
+            `WebUI command exited with code ${String(code)}${detail === '' ? '' : `\n\n${detail}`}`,
+          )
+          void this.cleanupRun(run).then(
+            () => { reject(failure) },
+            (cleanupError: unknown) => {
+              reject(new AggregateError(
+                [failure, cleanupError],
+                'WebUI startup and cleanup both failed',
+              ))
+            },
+          )
         } else if (!run.stopping) {
-          onUnexpectedExit(code, signal)
+          void this.finishUnexpectedExit(run, code, signal, onUnexpectedExit)
         }
       })
     })
@@ -237,17 +264,16 @@ export class WebBackend {
   stop(): Promise<void> {
     const run = this.run
     if (run === undefined) return Promise.resolve()
-    if (run.stopTask !== undefined) return run.stopTask
     run.stopping = true
+    return this.cleanupRun(run)
+  }
+
+  private cleanupRun(run: WebBackendRun): Promise<void> {
+    if (run.stopTask !== undefined) return run.stopTask
+    const stopTree = this.options.stopTree ?? stopProcessTree
     const task = (async () => {
       await stopDirectoryPicker(run)
-      signalTree(run.child, 'SIGTERM')
-      if (!await waitForTreeExit(run.child, SHUTDOWN_GRACE_MS)) {
-        signalTree(run.child, 'SIGKILL')
-        if (!await waitForTreeExit(run.child, SHUTDOWN_GRACE_MS)) {
-          throw new Error('WebUI process tree did not stop after SIGKILL')
-        }
-      }
+      await stopTree(run.child, 'WebUI')
     })()
     run.stopTask = task
     void task.then(
@@ -259,5 +285,23 @@ export class WebBackend {
       },
     )
     return task
+  }
+
+  private async finishUnexpectedExit(
+    run: WebBackendRun,
+    code: number | null,
+    signal: NodeJS.Signals | null,
+    report: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): Promise<void> {
+    try {
+      await this.cleanupRun(run)
+    } catch (cleanupError) {
+      console.error('WebUI process-tree cleanup failed after an unexpected exit.', cleanupError)
+    }
+    try {
+      report(code, signal)
+    } catch (reportError) {
+      console.error('Failed to report an unexpected WebUI exit.', reportError)
+    }
   }
 }

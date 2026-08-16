@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-directory-picker-electron",
   "description": "Electron directory-picker surface selecting native UI on loopback and in-app browsing remotely",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.6",
   "publishConfig": {
     "access": "public"
   },

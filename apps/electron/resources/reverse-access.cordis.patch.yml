@@ -1,0 +1,11 @@
+# FRP forwards one public authority to this loopback-only WebUI. The current
+# process token is still required for every request arriving through the tunnel.
+- id: webserver
+  config:
+    host: '127.0.0.1'
+    port: !!js ctx.webStartup.port ?? 0
+- id: connection
+  config:
+    trustedHosts: !!js '[process.env.DSH_ELECTRON_REMOTE_ACCESS_AUTHORITY]'
+    remoteAccessToken: !!js process.env.DSH_ELECTRON_REMOTE_ACCESS_TOKEN ?? ''
+    loopbackAccessToken: !!js process.env.DSH_ELECTRON_LOOPBACK_ACCESS_TOKEN ?? ''
