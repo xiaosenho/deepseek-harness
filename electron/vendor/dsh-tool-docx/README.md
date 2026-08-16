@@ -2,9 +2,9 @@
 
 English | [中文](README.zh.md)
 
-The model-facing `export_docx` tool generates a compact, single-column Microsoft Word resume from structured, confirmed content. It creates OOXML with the maintained `docx` library and publishes the complete binary through `ctx.fs.writeBytes`, so local, sandboxed, and E2B filesystem providers retain their atomic-write, observation, and containment behavior.
+The model-facing `export_resume` tool generates a professional Markdown resume from structured, confirmed content. It publishes the complete document through `ctx.fs.writeText`, so local, sandboxed, and E2B filesystem providers retain their atomic-write, observation, and containment behavior.
 
-This plugin is a specialized filesystem consumer. It does not parse an existing Word file and does not expose a general binary writer.
+This plugin is a specialized filesystem consumer. It does not parse an existing file and does not expose a general binary writer. Binary DOCX export requires a filesystem `writeBytes` verb the upstream kernel does not yet provide; this fork keeps the structured resume authoring on `writeText`.
 
 ## Config
 

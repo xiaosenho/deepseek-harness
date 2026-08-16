@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { buildResumeDocx } from './document.ts'
+import { buildResumeMarkdown } from './document.ts'
 import type { ResumeDocument, ResumeEntry, ResumeSection } from './document.ts'
 
 /** Cordis plugin name used by Loader diagnostics. */
@@ -91,7 +91,9 @@ function parseSections(sections: ResumeSection[]): ResumeSection[] {
  */
 function parseExportArgs(args: ExportArgs, maxCharacters: number): { filePath: string; resume: ResumeDocument } {
   const filePath = requiredText(args.file_path, 'file_path')
-  if (extname(filePath).toLowerCase() !== '.docx') throw new Error('file_path must end with .docx')
+  if (!['.md', '.markdown'].includes(extname(filePath).toLowerCase())) {
+    throw new Error('file_path must end with .md or .markdown')
+  }
   const headline = optionalText(args.headline)
   const contact = args.contact?.map((item, index) => requiredText(item, `contact[${index}]`))
   const resume: ResumeDocument = {
@@ -134,7 +136,7 @@ const SECTION_SCHEMA = {
 } as const
 
 /**
- * Register the structured DOCX resume exporter.
+ * Register the structured Markdown resume exporter.
  * @param ctx - the plugin context providing tools, filesystem, prompt, and optional sandbox policy.
  * @param config - schema-validated export bounds.
  */
@@ -148,16 +150,16 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   ctx.systemPrompt.section({
-    name: 'tool:export-docx',
+    name: 'tool:export-resume',
     order: 104,
-    text: 'Use export_docx only after the resume facts and wording are final. Supply structured sections, preserve every confirmed fact, and choose a new .docx path unless the user explicitly authorized replacement.',
+    text: 'Use export_resume only after the resume facts and wording are final. Supply structured sections, preserve every confirmed fact, and choose a new .md path unless the user explicitly authorized replacement.',
   })
 
   ctx.tools.register(defineTool({
-    name: 'export_docx',
-    description: 'Export a finalized, structured resume as a professional single-column Microsoft Word .docx file.',
+    name: 'export_resume',
+    description: 'Export a finalized, structured resume as a professional Markdown document.',
     parameters: {
-      file_path: { type: 'string', required: true, description: 'Destination path ending in .docx, resolved in the session workspace.' },
+      file_path: { type: 'string', required: true, description: 'Destination path ending in .md or .markdown, resolved in the session workspace.' },
       name: { type: 'string', required: true, description: 'Candidate name shown as the document title.' },
       headline: { type: 'string', description: 'Optional professional headline.' },
       contact: { type: 'array', items: { type: 'string' }, description: 'Confirmed contact facts in display order.' },
@@ -177,14 +179,15 @@ export function apply(ctx: Context, config: Config): void {
       },
       render: (_args, value) => [{
         type: 'text',
-        text: `<path>${value.path}</path>\n<type>document</type>\n<content>\n${value.operation === 'create' ? 'Created' : 'Updated'} DOCX resume (${value.bytes} bytes)\n</content>`,
+        text: `<path>${value.path}</path>\n<type>document</type>\n<content>\n${value.operation === 'create' ? 'Created' : 'Updated'} Markdown resume (${value.bytes} bytes)\n</content>`,
       }],
     },
     async execute(args, exec) {
       const { filePath, resume } = parseExportArgs(args, resolved.maxCharacters)
-      const bytes = await buildResumeDocx(resume)
-      if (bytes.byteLength > resolved.maxOutputBytes) {
-        throw new Error(`generated DOCX exceeds maxOutputBytes (${resolved.maxOutputBytes})`)
+      const markdown = buildResumeMarkdown(resume)
+      const bytes = Buffer.byteLength(markdown)
+      if (bytes > resolved.maxOutputBytes) {
+        throw new Error(`generated resume exceeds maxOutputBytes (${resolved.maxOutputBytes})`)
       }
       const policy: SandboxExecutionPolicy | undefined = sandboxPolicy?.resolve(
         exec.agent === undefined ? {} : { session: exec.agent.session },
@@ -195,12 +198,12 @@ export function apply(ctx: Context, config: Config): void {
         signal: exec.signal,
       })
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined)
-      const outcome = await ctx.fs.writeBytes(target, bytes, intent, exec.signal, policy)
+      const outcome = await ctx.fs.writeText(target, markdown, intent, exec.signal, policy)
       ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec)
       return {
         path: target.displayPath,
         operation: outcome.operation,
-        bytes: outcome.bytes,
+        bytes,
         sections: resume.sections.length,
         entries: resume.sections.reduce((total, section) => total + section.entries.length, 0),
       }
@@ -208,7 +211,7 @@ export function apply(ctx: Context, config: Config): void {
     presentCall(args): GenericCallView {
       return {
         card: 'generic',
-        title: `Export Word resume to ${args.file_path}`,
+        title: `Export resume to ${args.file_path}`,
         kind: 'edit',
         locations: [{ path: args.file_path }],
       }
@@ -217,7 +220,7 @@ export function apply(ctx: Context, config: Config): void {
       if (result.isError) return undefined
       return {
         card: 'generic',
-        title: `Exported Word resume to ${args.file_path}`,
+        title: `Exported resume to ${args.file_path}`,
         content: result.content,
       }
     },

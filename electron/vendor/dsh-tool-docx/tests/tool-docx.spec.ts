@@ -1,4 +1,4 @@
-/** Structured DOCX export behavior over the real local filesystem provider. */
+/** Structured Markdown resume export over the real local filesystem provider. */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -33,13 +33,13 @@ afterEach(async () => {
 function call(args: unknown) {
   return ctx.tools.execute({
     callId: CallId(`docx-${++callCounter}`),
-    name: 'export_docx',
+    name: 'export_resume',
     arguments: args,
     signal,
   })
 }
 
-function resume(filePath = 'resume.docx') {
+function resume(filePath = 'resume.md') {
   return {
     file_path: filePath,
     name: '张伟',
@@ -56,30 +56,32 @@ function resume(filePath = 'resume.docx') {
   }
 }
 
-describe('export_docx', () => {
+describe('export_resume', () => {
   it('registers one exclusive tool and its finalization guidance', async () => {
-    expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['export_docx'])
-    expect(ctx.tools.executionMode({ callId: CallId('mode'), name: 'export_docx', arguments: resume(), signal }))
+    expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['export_resume'])
+    expect(ctx.tools.executionMode({ callId: CallId('mode'), name: 'export_resume', arguments: resume(), signal }))
       .toEqual({ kind: 'exclusive' })
-    expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain('Use export_docx only after')
+    expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain('Use export_resume only after')
   })
 
-  it('writes a valid OOXML zip with structured metadata', async () => {
+  it('writes a Markdown resume with structured metadata', async () => {
     const result = await call(resume())
     expect(result.isError).toBe(false)
-    if (result.isError) throw new Error('expected DOCX export success')
+    if (result.isError) throw new Error('expected resume export success')
     expect(result.value).toMatchObject({ operation: 'create', sections: 1, entries: 1 })
 
-    const bytes = await readFile(join(dir, 'resume.docx'))
-    expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
-    expect(result.value).toMatchObject({ bytes: bytes.byteLength })
+    const markdown = await readFile(join(dir, 'resume.md'), 'utf8')
+    expect(markdown).toContain('# 张伟')
+    expect(markdown).toContain('## 工作经历')
+    expect(markdown).toContain('- 将推理服务延迟降低 35%。')
+    expect(result.value).toMatchObject({ bytes: Buffer.byteLength(markdown) })
   })
 
-  it('rejects non-DOCX paths and structurally empty resumes', async () => {
+  it('rejects non-Markdown paths and structurally empty resumes', async () => {
     const wrongExtension = await call(resume('resume.pdf'))
     expect(wrongExtension.isError).toBe(true)
     expect(wrongExtension.content.map(item => item.type === 'text' ? item.text : '').join('\n'))
-      .toContain('file_path must end with .docx')
+      .toContain('file_path must end with .md or .markdown')
 
     const empty = await call({ ...resume(), sections: [] })
     expect(empty.isError).toBe(true)
@@ -87,15 +89,15 @@ describe('export_docx', () => {
       .toContain('sections must contain at least one section')
   })
 
-  it('does not blindly replace an existing Word file under observation policy', async () => {
+  it('does not blindly replace an existing resume file under observation policy', async () => {
     await ctx.plugin((await import('@deepseek-ai/dsh-fs-observation-policy')))
-    await writeFile(join(dir, 'resume.docx'), 'existing')
+    await writeFile(join(dir, 'resume.md'), 'existing')
 
     const result = await call(resume())
 
     expect(result.isError).toBe(true)
     expect(result.content.map(item => item.type === 'text' ? item.text : '').join('\n'))
       .toContain('without reading it first')
-    expect(await readFile(join(dir, 'resume.docx'), 'utf8')).toBe('existing')
+    expect(await readFile(join(dir, 'resume.md'), 'utf8')).toBe('existing')
   })
 })
