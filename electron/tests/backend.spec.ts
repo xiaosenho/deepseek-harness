@@ -68,6 +68,7 @@ describe('buildBackendArgs', () => {
       '--expose-internals', 'dsh.js', 'web',
       '--patch', expect.stringContaining('electron-directory-picker.cordis.patch.yml'),
       '--patch', expect.stringContaining('loopback-access.cordis.patch.yml'),
+      '--patch', expect.stringContaining('desktop-ui.cordis.patch.yml'),
       '--port', '0',
     ])
     expect(basename(args[4] ?? '')).toBe('electron-directory-picker.cordis.patch.yml')
@@ -79,18 +80,21 @@ describe('buildBackendArgs', () => {
       '--expose-internals', 'dsh.js', 'web',
       '--patch', expect.stringContaining('electron-directory-picker.cordis.patch.yml'),
       '--patch', expect.stringContaining('loopback-access.cordis.patch.yml'),
+      '--patch', expect.stringContaining('desktop-ui.cordis.patch.yml'),
       '--port', '0',
     ])
     expect(buildBackendArgs('linux', 'lan', 'dsh.js')).toEqual([
       '--expose-internals', 'dsh.js', 'web',
       '--patch', expect.stringContaining('electron-directory-picker.cordis.patch.yml'),
       '--patch', expect.stringContaining('lan-access.cordis.patch.yml'),
+      '--patch', expect.stringContaining('desktop-ui.cordis.patch.yml'),
       '--port', '0',
     ])
     expect(buildBackendArgs('darwin', 'frp', 'dsh.js')).toEqual([
       '--expose-internals', 'dsh.js', 'web',
       '--patch', expect.stringContaining('electron-directory-picker.cordis.patch.yml'),
       '--patch', expect.stringContaining('reverse-access.cordis.patch.yml'),
+      '--patch', expect.stringContaining('desktop-ui.cordis.patch.yml'),
       '--port', '0',
     ])
   })
@@ -109,7 +113,7 @@ describe('WebBackend exposure', () => {
     try {
       const child = new FakeBackendChild()
       processMocks.children.push(asChild(child))
-      const started = new WebBackend().start('loopback', '/work', () => {}, async () => null)
+      const started = new WebBackend({ linkPlugins: () => {} }).start('loopback', '/work', () => {}, async () => null)
       child.stdout.write('dsh web: http://127.0.0.1:43127 (LAN: http://192.168.1.5:43127)\n')
 
       await expect(started).resolves.toEqual({
@@ -129,7 +133,7 @@ describe('WebBackend exposure', () => {
   it('creates a token-bearing URL only for LAN mode', async () => {
     const child = new FakeBackendChild()
     processMocks.children.push(asChild(child))
-    const started = new WebBackend().start('lan', '/work', () => {}, async () => null)
+    const started = new WebBackend({ linkPlugins: () => {} }).start('lan', '/work', () => {}, async () => null)
     child.stdout.write('dsh web: http://127.0.0.1:43127 (LAN: http://192.168.1.5:43127)\n')
 
     const location = await started
@@ -148,7 +152,7 @@ describe('WebBackend exposure', () => {
     try {
       const child = new FakeBackendChild()
       processMocks.children.push(asChild(child))
-      const started = new WebBackend().start(
+      const started = new WebBackend({ linkPlugins: () => {} }).start(
         'frp',
         '/work',
         () => {},
@@ -177,7 +181,7 @@ describe('WebBackend exposure', () => {
   })
 
   it('rejects FRP before spawning when no public authority was validated', async () => {
-    await expect(new WebBackend().start('frp', '/work', () => {}, async () => null))
+    await expect(new WebBackend({ linkPlugins: () => {} }).start('frp', '/work', () => {}, async () => null))
       .rejects.toThrow('trusted public authority')
     expect(processMocks.calls).toEqual([])
   })
@@ -195,7 +199,7 @@ describe('WebBackend directory-picker shutdown', () => {
       events.push('tree-stop-finished')
     })
     const onUnexpectedExit = vi.fn(() => { events.push('reported') })
-    const backend = new WebBackend({ stopTree })
+    const backend = new WebBackend({ stopTree, linkPlugins: () => {} })
     let pickerSignal: AbortSignal | undefined
     let finishPicker: (() => void) | undefined
     const started = backend.start('loopback', '/work', onUnexpectedExit, signal => new Promise((resolve) => {
@@ -248,7 +252,7 @@ describe('WebBackend directory-picker shutdown', () => {
     const treeCleanup = Promise.withResolvers<undefined>()
     const stopTree = vi.fn(async () => { await treeCleanup.promise })
     const onUnexpectedExit = vi.fn()
-    const backend = new WebBackend({ stopTree })
+    const backend = new WebBackend({ stopTree, linkPlugins: () => {} })
     const started = backend.start('loopback', '/work', onUnexpectedExit, async () => null)
     child.stdout.write('dsh web: http://127.0.0.1:43127\n')
     await started
@@ -277,7 +281,7 @@ describe('WebBackend directory-picker shutdown', () => {
     })
     const reportError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const onUnexpectedExit = vi.fn()
-    const backend = new WebBackend({ stopTree })
+    const backend = new WebBackend({ stopTree, linkPlugins: () => {} })
     try {
       const started = backend.start('loopback', '/work', onUnexpectedExit, async () => null)
       child.stdout.write('dsh web: http://127.0.0.1:43127\n')
@@ -305,7 +309,7 @@ describe('WebBackend directory-picker shutdown', () => {
   it('retries bounded process-tree cleanup after a failed stop attempt', async () => {
     const child = new FakeBackendChild()
     processMocks.children.push(asChild(child))
-    const backend = new WebBackend()
+    const backend = new WebBackend({ linkPlugins: () => {} })
     const started = backend.start('lan', '/work', () => {}, async () => null)
     child.stdout.write('dsh web: http://127.0.0.1:43127 (LAN: http://192.168.1.5:43127)\n')
     await started

@@ -37,6 +37,7 @@
     "@deepseek-ai/dsh-client-connection": "workspace:^",
     "@deepseek-ai/dsh-client-ui-desktop-electron": "workspace:^",
     "@deepseek-ai/dsh-client-ui-directory-picker-electron": "workspace:^",
+    "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@deepseek-ai/dsh-host-directory-picker-electron": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/dsh-tool-docx": "workspace:^",

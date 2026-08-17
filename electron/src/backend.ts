@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ElectronDirectoryPickerBridge, type ElectronDirectoryPickerHandler } from './directory-picker-bridge.ts'
+import { linkWebKernelPlugins } from './web-kernel-plugins.ts'
 import { formatRemoteAccessUrl } from './remote-access.ts'
 import { LineBuffer, parseReadyUrls } from './readiness.ts'
 import { signalProcessTree, stopProcessTree } from './process-tree.ts'
@@ -39,6 +40,11 @@ function resolveLoopbackAccessOverlay(): string {
   return fileURLToPath(new URL('../resources/loopback-access.cordis.patch.yml', import.meta.url))
 }
 
+/** Resolve the overlay that mounts the desktop-only Settings contributions. */
+function resolveDesktopUiOverlay(): string {
+  return fileURLToPath(new URL('../resources/desktop-ui.cordis.patch.yml', import.meta.url))
+}
+
 /** Network exposure selected for one Electron-owned WebUI process. */
 export type WebBackendMode = 'loopback' | 'lan' | 'frp'
 
@@ -61,6 +67,7 @@ export function buildBackendArgs(
       : resolveLoopbackAccessOverlay()
   void platform
   const electronOverlay = resolveElectronOverlay()
+  const desktopUiOverlay = resolveDesktopUiOverlay()
   return [
     '--expose-internals',
     dshBin,
@@ -68,6 +75,7 @@ export function buildBackendArgs(
     '--patch', electronOverlay,
     '--patch',
     networkOverlay,
+    '--patch', desktopUiOverlay,
     '--port',
     '0',
   ]
@@ -104,6 +112,8 @@ interface WebBackendRun {
 interface WebBackendOptions {
   /** Complete process-tree cleanup overridden by lifecycle tests. */
   stopTree?: typeof stopProcessTree
+  /** Profile plugin-link step overridden by lifecycle tests. */
+  linkPlugins?: (home?: string) => void
 }
 
 function stopDirectoryPicker(run: WebBackendRun): Promise<void> {
@@ -159,6 +169,9 @@ export class WebBackend {
         loopbackAccessToken = createRemoteAccessToken()
       } while (loopbackAccessToken === remoteAccessToken)
     }
+    // The Loader resolves plugin names from the kernel profile; link the
+    // shell's vendor plugins into the profile fallback before the boot.
+    ;(this.options.linkPlugins ?? linkWebKernelPlugins)()
     const child = spawn(process.execPath, buildBackendArgs(process.platform, mode), {
       cwd,
       env: backendEnvironment(remoteAccessToken, loopbackAccessToken, trustedAuthority),

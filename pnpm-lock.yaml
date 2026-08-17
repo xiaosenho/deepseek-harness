@@ -8383,6 +8383,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-directory-picker-electron':
         specifier: workspace:^
         version: link:vendor/ui-directory-picker-electron
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../deepseek-harness-web/packages/util/home-paths
       '@deepseek-ai/dsh-host-directory-picker-electron':
         specifier: workspace:^
         version: link:vendor/directory-picker-electron
