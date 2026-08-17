@@ -12,6 +12,8 @@ DeepSeek Harness 的自包含 Electron 桌面应用。它会打包构建后的 `
 pnpm run dev:electron
 ```
 
+该命令会先构建固定版本的 Web 内核、桌面 vendor 包与 Electron 壳，再打开窗口；全新检出的仓库不需要另行执行构建命令。
+
 源码开发以仓库根目录作为 Web profile 的工作目录。打包应用默认使用当前用户的主目录。设置 `DSH_ELECTRON_CWD` 可选择其他初始工作目录。
 
 设置 `DSH_ELECTRON_URL` 为 HTTP 或 HTTPS URL，可跳过后台命令并让窗口连接到已经运行的 WebUI。此模式会完全省略 Electron 专属设置项和原生应用菜单中的「Remote Access」部分；Electron 不会创建远程访问控制器、preload bridge 或凭据，外部 WebUI 负责自己的网络与认证策略。

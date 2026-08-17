@@ -20,7 +20,7 @@
     "resources/version.json"
   ],
   "scripts": {
-    "build": "\"$npm_execpath\" --filter @deepseek-ai/dsh-host-directory-picker-electron --filter @deepseek-ai/dsh-client-ui-directory-picker-electron --filter @deepseek-ai/dsh-client-ui-desktop-electron --filter @deepseek-ai/dsh-tool-docx --filter @deepseek-ai/dsh-client-directory-picker-flows run build && node scripts/gen-version-info.mjs && tsc -b && tsdown",
+    "build": "pnpm --filter @deepseek-ai/dsh-host-directory-picker-electron --filter @deepseek-ai/dsh-client-ui-directory-picker-electron --filter @deepseek-ai/dsh-client-ui-desktop-electron --filter @deepseek-ai/dsh-tool-docx --filter @deepseek-ai/dsh-client-directory-picker-flows run build && node scripts/gen-version-info.mjs && tsc -b && tsdown",
     "dev": "electron .",
     "test": "vitest run",
     "pack": "electron-builder --config electron-builder.config.mjs --dir",

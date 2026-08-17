@@ -42,7 +42,7 @@ pnpm install
 pnpm run dev:electron
 ```
 
-`pnpm run dev:electron` 构建壳并从仓库根目录启动 `dsh web` 打开桌面窗口。用 `DSH_ELECTRON_CWD` 指定其他工作目录，或用 `DSH_ELECTRON_URL` 连接一个已在运行的 WebUI。
+`pnpm run dev:electron` 先构建固定版本的 Web 内核与桌面壳，再从仓库根目录启动 `dsh web` 打开桌面窗口。首次构建可能需要几分钟，后续构建会复用生成产物与 pnpm 包存储。用 `DSH_ELECTRON_CWD` 指定其他工作目录，或用 `DSH_ELECTRON_URL` 连接一个已在运行的 WebUI。
 
 ### 桌面应用
 

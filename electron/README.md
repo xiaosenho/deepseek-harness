@@ -12,6 +12,8 @@ From the repository root:
 pnpm run dev:electron
 ```
 
+The command builds the pinned Web kernel, desktop vendor packages, and Electron shell before opening the window. A fresh checkout therefore needs no separate build command.
+
 Source development uses the repository root as the Web profile's working directory. A packaged application uses the current user's home directory by default. Set `DSH_ELECTRON_CWD` to choose another initial working directory.
 
 Set `DSH_ELECTRON_URL` to an HTTP or HTTPS URL to skip the background command and connect the window to an already-running WebUI. This mode omits the Electron-only Settings contributions and the **Remote Access** application-menu section entirely; Electron creates no remote-access controller, preload bridge, or credential, and the external WebUI owns its network and authentication policy.

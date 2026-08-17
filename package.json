@@ -7,8 +7,8 @@
   "scripts": {
     "postinstall": "lefthook install",
     "build": "pnpm run build:web-kernel && pnpm --filter @deepseek-ai/dsh-electron run build",
-    "build:web-kernel": "cd deepseek-harness-web && \"$npm_execpath\" install --no-frozen-lockfile && \"$npm_execpath\" run build",
-    "dev:electron": "pnpm --filter @deepseek-ai/dsh-electron run dev",
+    "build:web-kernel": "node scripts/build-web-kernel.mjs",
+    "dev:electron": "pnpm run build && pnpm --filter @deepseek-ai/dsh-electron run dev",
     "test": "pnpm --filter @deepseek-ai/dsh-electron run test",
     "test:web-kernel": "cd deepseek-harness-web && \"$npm_execpath\" run test",
     "pack:electron": "pnpm run build && pnpm --filter @deepseek-ai/dsh-electron run pack",

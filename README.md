@@ -51,7 +51,7 @@ pnpm install
 pnpm run dev:electron
 ```
 
-`pnpm run dev:electron` builds the shell and opens the desktop window against a `dsh web` started from the repository root. Set `DSH_ELECTRON_CWD` to choose another initial working directory, or `DSH_ELECTRON_URL` to connect the window to an already-running WebUI.
+`pnpm run dev:electron` builds the pinned Web kernel and shell, then opens the desktop window against a `dsh web` started from the repository root. The first run can take several minutes; later builds reuse generated artifacts and pnpm's package store. Set `DSH_ELECTRON_CWD` to choose another initial working directory, or `DSH_ELECTRON_URL` to connect the window to an already-running WebUI.
 
 ### Desktop application
 
