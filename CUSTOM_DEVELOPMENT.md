@@ -41,6 +41,84 @@ DeepSeek Harness 遵循“一切皆插件”。开始修改 `packages/` 前必�
 
 插件之间通过 `ctx.<service>`、类型化事件和公开注册 API 协作，不依赖其他插件的私有实现。新的完整能力按照 Service Definition、Service Provider 和 Consumer 三种角色设计；角色可以位于同一包中，但不得只实现其中一端并让调用方依赖具体实现。
 
+## 树外插件仓库与发布
+
+面向团队复用或公开分发的业务插件属于树外插件，必须在独立 Git 仓库中维护，并以独立 npm 包发布。主仓库只接受多个插件共同需要的最小通用扩展点；禁止把业务插件源码、构建产物、专用配置或安装 profile 放入本仓库。组合包与 profile 的完整机制见[打包与安装插件](docs/user/develop/basic/publish.zh.md)。
+
+`dsh plugin --profile <name> <args...>` 把包规格交给 profile 内的 pnpm，并根据安装包的 `dsh.bundle` manifest 激活配置层。DSH 不要求额外的插件商店登记；公开 npm 包提供最短且无需安装时构建的分发路径，Git 仓库和 tarball 作为可固定源码版本或离线交付的补充路径。
+
+### 包结构
+
+可通过 `dsh plugin` 安装的 TypeScript Web 插件至少包含预编译的 Node 入口、Web client bundle、`cordis.patch.yml`、类型声明、README 和许可证。`package.json` 使用发布文件白名单，并声明以下入口和 DSH manifest：
+
+```json
+{
+  "name": "@owner/dsh-plugin-example",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.cjs"
+  },
+  "files": ["lib/", "cordis.patch.yml", "README.md", "LICENSE"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-runtime"]
+    }
+  },
+  "publishConfig": { "access": "public" }
+}
+```
+
+`cordis.patch.yml` 中的插件行必须按 npm 包名引用入口，不能引用开发机源码路径。Web 插件同时提供 `exports["./client"]` 和 `dsh.client.platform: web`；`dsh.client.inject` 只列出 client bundle 实际使用的宿主 client 包。Cordis、DSH 和 React 等宿主包放在 `peerDependencies` 及匹配的 `devDependencies` 中，并从构建产物 externalize，避免安装第二套运行时。
+
+Git 安装拉取源码，因此包必须提供可独立运行的 `prepare` 构建，用户还必须在目标 profile 的 `pnpm-workspace.yaml` 中按 pnpm 输出的确切包键授权 `allowBuilds`。npm 和 tarball 必须携带已构建的 `lib/`，安装时不得依赖仓库旁边的 monorepo、全局构建工具或开发机路径。
+
+### 配置和跨端实现
+
+设置面板、服务端插件和 Web client 使用同一组带判别字段的配置类型。验证器只要求共享字段和当前启用分支的字段：例如选择域名入口时验证域名，选择 IP 加端口入口时验证 IP 和端口；未选择或未启用的分支不得因空字段阻止整个插件树加载。当前启用配置中可在加载时确定的错误仍必须立即报告。
+
+设置服务注册时必须保留已经持久化的配置，更新操作基于完整当前值产生下一份配置，不能用表单的局部 payload 覆盖未显示字段。配置保存、启用、禁用和重载必须走同一生命周期所有者；认证代理、监听端口、临时文件和 `frpc` 等子进程全部由 `ctx.effect()` 管理，disposer 等待资源真正停止。
+
+远程访问类插件必须同时保护 HTTP 和 WebSocket，访问凭据不得进入日志、进程参数或公开配置。普通局域网 HTTP 页面不属于 secure context，不能假设 `crypto.randomUUID()` 等浏览器 API 存在；兼容处理应在插件自己的 client bundle 中完成，不得为一个树外插件修改 Harness WebUI 内核。
+
+### 发布和验收
+
+npm scoped 包名必须写成 `@owner/package`，对应安装命令也保留 `@`；`owner/repository` 是 GitHub 仓库路径，对应包规格为 `github:owner/repository#<commit>`。两种来源不得混写：
+
+```sh
+dsh plugin --profile web add @owner/dsh-plugin-example
+dsh plugin --profile web add github:owner/dsh-plugin-example#<commit>
+```
+
+发布前运行插件仓库自己的类型检查、测试和构建，并用 `npm pack --dry-run --json` 检查文件清单。清单必须包含所有运行入口和 patch，且不得包含源码凭据、`.env`、IDE 配置、测试缓存或本地 profile。公共 scoped 包通过 registry 要求的强认证发布：
+
+```sh
+pnpm run typecheck
+pnpm run test
+pnpm run build
+npm pack --dry-run --json
+npm publish --access public
+npm view @owner/dsh-plugin-example version
+```
+
+最终验收必须从公共 registry 安装，不能只验证本地 checkout 或 tarball。同一 profile 中先移除旧的本地 link 或旧包名，避免同一个插件 id 被两个组合包重复加载；随后安装精确版本，启动时使用空闲端口避免把端口占用误判为插件加载失败：
+
+```sh
+dsh plugin --profile web remove dsh-plugin-example
+dsh plugin --profile web add @owner/dsh-plugin-example@0.1.0
+dsh web --port <unused-port>
+```
+
+远程连接插件 [`@xiaosenho/dsh-plugin-remote-access`](https://www.npmjs.com/package/@xiaosenho/dsh-plugin-remote-access) 是该交付方式的参考实现，源码位于 [`xiaosenho/dsh-plugin-remote-access`](https://github.com/xiaosenho/dsh-plugin-remote-access)。它把设置 UI、认证代理、局域网入口、域名隧道、IP 加端口隧道和 `frpc` 生命周期保留在独立插件仓库中，用户通过 `dsh plugin --profile web add @xiaosenho/dsh-plugin-remote-access` 安装，主仓库不承载其业务实现。
+
 ## Cordis 开发前置要求
 
 插件作者在设计和编码前必须完成 [Cordis 入门](docs/cordis-primer.zh.md)和 [Cordis 教程](docs/cordis-tutorial/index.zh.md)，并理解以下机制：
