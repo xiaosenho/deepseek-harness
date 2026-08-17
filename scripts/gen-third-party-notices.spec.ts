@@ -127,6 +127,18 @@ describe('virtualManifest', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('returns undefined when a prefix-matching store directory has no package manifest', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-notices-empty-optional-'))
+    try {
+      const store = join(root, 'store')
+      mkdirSync(join(store, '@scope/pkg@1.0.0'), { recursive: true })
+
+      expect(virtualManifest(store, '@scope/pkg')).toBeUndefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('parseVendoredRows', () => {

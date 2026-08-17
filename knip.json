@@ -243,6 +243,16 @@
         "debug"
       ]
     },
+    "electron": {
+      "entry": [
+        "src/main.ts",
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "packages/*/*": {
       "entry": [
         "tests/**/*.spec.ts"

@@ -77,6 +77,7 @@ export class RepositoryCleaner {
       join(this.root, 'native/landlock-run/tsconfig.tsbuildinfo'),
       canonicalRoot,
     )
+    await this.addIfPresent(targets, join(this.root, 'electron/lib'), canonicalRoot)
 
     // The root project-reference graph is the source of truth for live build targets.
     // Each emitting project declares lib/types as outDir; its parent lib also owns
