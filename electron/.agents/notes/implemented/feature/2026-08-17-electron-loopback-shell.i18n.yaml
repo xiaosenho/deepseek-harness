@@ -1,0 +1,4 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority.
+2026-08-17-electron-loopback-shell.md: 5198ebb001c31e880d6b5568501e55cd33422cfd
+2026-08-17-electron-loopback-shell.zh.md: e2aa541e16b3fe136e8e4f3fbb0c537ce1f1558a

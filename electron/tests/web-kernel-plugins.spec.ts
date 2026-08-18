@@ -27,7 +27,7 @@ describe('linkWebKernelPlugins', () => {
     for (const packageName of WEB_KERNEL_PLUGIN_PACKAGES) {
       const link = linkPath(home, packageName)
       expect(lstatSync(link).isSymbolicLink()).toBe(true)
-      expect(readlinkSync(link)).toContain('electron/vendor')
+      expect(readlinkSync(link).replaceAll('\\', '/')).toContain('electron/vendor')
     }
   })
 

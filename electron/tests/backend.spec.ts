@@ -309,41 +309,21 @@ describe('WebBackend directory-picker shutdown', () => {
   it('retries bounded process-tree cleanup after a failed stop attempt', async () => {
     const child = new FakeBackendChild()
     processMocks.children.push(asChild(child))
-    const backend = new WebBackend({ linkPlugins: () => {} })
+    const stopTree = vi.fn()
+      .mockRejectedValueOnce(new Error('WebUI process tree did not stop after SIGKILL'))
+      .mockResolvedValue(undefined)
+    const backend = new WebBackend({ linkPlugins: () => {}, stopTree })
     const started = backend.start('lan', '/work', () => {}, async () => null)
     child.stdout.write('dsh web: http://127.0.0.1:43127 (LAN: http://192.168.1.5:43127)\n')
     await started
 
-    let alive = true
-    let clock = 0
-    let forceAttempts = 0
-    const now = vi.spyOn(Date, 'now').mockImplementation(() => {
-      clock += 3_000
-      return clock
-    })
-    const kill = vi.spyOn(process, 'kill').mockImplementation((_pid, signal) => {
-      if (signal === 0) {
-        if (alive) return true
-        throw Object.assign(new Error('process group exited'), { code: 'ESRCH' })
-      }
-      if (signal === 'SIGKILL') {
-        forceAttempts += 1
-        if (forceAttempts === 2) alive = false
-      }
-      return true
-    })
-    try {
-      const first = backend.stop()
-      await expect(first).rejects.toThrow('did not stop after SIGKILL')
+    const first = backend.stop()
+    await expect(first).rejects.toThrow('did not stop after SIGKILL')
 
-      const second = backend.stop()
-      expect(second).not.toBe(first)
-      await expect(second).resolves.toBeUndefined()
-      await expect(backend.stop()).resolves.toBeUndefined()
-      expect(forceAttempts).toBe(2)
-    } finally {
-      kill.mockRestore()
-      now.mockRestore()
-    }
+    const second = backend.stop()
+    expect(second).not.toBe(first)
+    await expect(second).resolves.toBeUndefined()
+    await expect(backend.stop()).resolves.toBeUndefined()
+    expect(stopTree).toHaveBeenCalledTimes(2)
   })
 })

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createApplicationMenuTemplate,
   refreshRemoteAccessMenu,
+  runInstallCommandLine,
   runManualUpdateCheck,
   type ApplicationMenuOptions,
   type RemoteAccessMenuOptions,
@@ -12,6 +13,11 @@ function options(overrides: Partial<ApplicationMenuOptions> = {}): ApplicationMe
     applicationName: 'DeepSeek Harness',
     checkForUpdates: vi.fn().mockResolvedValue({ status: 'current' }),
     currentVersion: '0.1.0',
+    installCommandLine: vi.fn().mockResolvedValue({
+      status: 'installed',
+      message: 'dsh command line installed',
+      path: '/home/test/bin/dsh',
+    }),
     installUpdate: vi.fn().mockResolvedValue(true),
     platform: 'darwin',
     showMessageBox: vi.fn().mockResolvedValue({ checkboxChecked: false, response: 0 }),
@@ -56,6 +62,10 @@ describe('Electron application menu', () => {
       id: 'check-for-updates',
       label: 'Check for Updates...',
     })
+    expect(applicationMenu?.submenu).toContainEqual(expect.objectContaining({
+      id: 'install-dsh',
+      label: 'Install dsh Command Line...',
+    }))
   })
 
   it('keeps About and manual updates in Help on other platforms', () => {
@@ -160,6 +170,8 @@ describe('Electron application menu', () => {
   it.each([
     [{ status: 'disabled' } as const, 'Updates are available only in an installed application.'],
     [{ status: 'unsupported' } as const, 'Automatic updates are not available on this platform.'],
+    [{ status: 'readonly' } as const, 'Automatic updates cannot run from a read-only volume.'],
+    [{ status: 'unsigned' } as const, 'This macOS build is unsigned and cannot install automatic updates.'],
     [{ status: 'no-release' } as const, 'No update is currently published.'],
     [{ status: 'current' } as const, 'DeepSeek Harness 0.1.0 is up to date.'],
     [{ status: 'ready', version: '0.2.0', changelog: 'New desktop controls.' } as const, 'DeepSeek Harness 0.2.0 is ready to install.'],
@@ -185,5 +197,20 @@ describe('Electron application menu', () => {
       options({ checkForUpdates }),
     )
     expect(checkForUpdates).not.toHaveBeenCalled()
+  })
+
+  it('runs the dsh command installer once and restores its menu item', async () => {
+    const installCommandLine = vi.fn().mockResolvedValue({
+      status: 'installed',
+      message: 'dsh command line installed',
+      path: '/home/test/bin/dsh',
+    })
+    const item = { enabled: true, label: 'Install dsh Command Line...' }
+    const operation = runInstallCommandLine(item, options({ installCommandLine }))
+
+    expect(item).toEqual({ enabled: false, label: 'Installing dsh Command Line...' })
+    await operation
+    expect(installCommandLine).toHaveBeenCalledOnce()
+    expect(item).toEqual({ enabled: true, label: 'Install dsh Command Line...' })
   })
 })

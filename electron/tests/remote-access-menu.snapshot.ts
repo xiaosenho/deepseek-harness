@@ -43,6 +43,11 @@ function options(
     applicationName: 'DeepSeek Harness',
     checkForUpdates: async () => ({ status: 'current' }),
     currentVersion: '0.1.0',
+    installCommandLine: async () => ({
+      status: 'installed',
+      message: 'dsh command line installed',
+      path: '/home/test/bin/dsh',
+    }),
     installUpdate: async () => true,
     platform,
     showMessageBox: async () => ({ checkboxChecked: false, response: 0 }),

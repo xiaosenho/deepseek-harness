@@ -8,10 +8,12 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, net, safeStorage, session } 
 import {
   createApplicationMenuTemplate,
   refreshRemoteAccessMenu,
+  updateResultDialog,
   type ApplicationMenuOptions,
 } from './application-menu.ts'
 import { resolveApplicationUrl } from './application-url.ts'
-import { WebBackend } from './backend.ts'
+import { resolveDshBin, WebBackend } from './backend.ts'
+import { installDshCommandLine } from './cli-installer.ts'
 import { installDesktopBridge } from './desktop-bridge.ts'
 import { FrpcClient } from './frpc.ts'
 import {
@@ -41,10 +43,12 @@ import {
 import { ExitBarrier } from './exit-barrier.ts'
 import { synchronizeRendererAccessCookie } from './renderer-access-cookie.ts'
 import { pickRemoteAccessFile } from './remote-access-file-picker.ts'
+import { ensureRuntimeBinaries } from './runtime.ts'
 import {
   installUpdateAfterShutdown,
   OtaUpdateController,
   type InstallDownloadedUpdate,
+  type OtaUpdateCheckResult,
 } from './updater.ts'
 import { checkWebKernelUpdate, readWebKernelInfo } from './web-kernel-info.ts'
 
@@ -56,7 +60,9 @@ let applicationUrl: URL | undefined
 let remoteAccess: RemoteAccessController | undefined
 let remoteAccessStore: RemoteAccessConfigurationStore | undefined
 let quitting = false
-const backend = new WebBackend()
+let backend = new WebBackend()
+let updateProgressWindow: BrowserWindow | undefined
+let updateProgressBlocking = false
 const exitBarrier = new ExitBarrier()
 const fatalRemoteAccessRecovery = new FatalRemoteAccessRecovery()
 const directoryPickerHelper = process.argv.includes(DIRECTORY_PICKER_HELPER_ARGUMENT)
@@ -67,9 +73,17 @@ const otaUpdater = new OtaUpdateController({
   ...(process.env.DSH_ELECTRON_OTA_URL === undefined
     ? {}
     : { baseUrl: process.env.DSH_ELECTRON_OTA_URL }),
+  applicationExecPath: process.execPath,
   currentVersion: app.getVersion(),
   fetch: (input, init) => net.fetch(input, init),
   isPackaged: app.isPackaged,
+  onDownloadStart: (force: boolean) => {
+    updateProgressBlocking = force
+    setUpdateProgress(0)
+  },
+  onDownloadProgress: (progress) => {
+    setUpdateProgress(progress.percent)
+  },
   onForceUpdateReady: restartForUpdate,
   platform: process.platform,
 })
@@ -80,6 +94,13 @@ function openExternal(target: string): void {
 
 function stopOwnedProcesses(): Promise<void> {
   return remoteAccess?.shutdown() ?? backend.stop()
+}
+
+function desktopUpdateState(): ElectronDesktopState['update'] {
+  const state = otaUpdater.getState()
+  return state.status === 'readonly' || state.status === 'unsigned'
+    ? { status: 'unsupported' }
+    : state
 }
 
 function desktopState(): ElectronDesktopState {
@@ -103,7 +124,7 @@ function desktopState(): ElectronDesktopState {
       ...state.mode === undefined ? {} : { activeMode: state.mode },
       ...publicEndpoint === undefined ? {} : { publicEndpoint },
     },
-    update: otaUpdater.getState(),
+    update: desktopUpdateState(),
     webKernel: {
       commit: kernelInfo?.webKernelCommit ?? '',
       update: webKernelUpdate,
@@ -138,15 +159,104 @@ function relaunchAfterInstallFailure(error: Error): void {
   app.exit(1)
 }
 
+function updateProgressHtml(percent: number): string {
+  const installing = updateProgressBlocking && percent >= 100
+  const title = installing
+    ? 'Installing update...'
+    : updateProgressBlocking
+      ? 'Downloading required update...'
+      : 'Downloading update...'
+  const detail = installing
+    ? 'The update is ready and DeepSeek Harness will restart shortly.'
+    : updateProgressBlocking
+      ? 'The main window is unavailable until this required update completes.'
+      : 'You can continue using the main window while the update downloads.'
+  const rounded = Math.max(0, Math.min(100, Math.round(percent)))
+  return `<!doctype html><meta charset="utf-8"><style>body{font:13px -apple-system,BlinkMacSystemFont,sans-serif;padding:18px;color:#333;background:#fff;margin:0}</style><p style="margin:0 0 8px"><strong>${title}</strong></p><p style="margin:0 0 8px;color:#666">${detail}</p><progress value="${rounded}" max="100" style="display:block;width:100%;height:14px"></progress><p style="margin:10px 0 0;color:#666;text-align:right">${rounded}%</p>`
+}
+
+function createUpdateProgressWindow(blocking: boolean): BrowserWindow {
+  const window = new BrowserWindow({
+    width: 420,
+    height: 160,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    ...(mainWindow === undefined ? {} : { parent: mainWindow }),
+    modal: blocking,
+    title: blocking ? 'Updating DeepSeek Harness' : 'Downloading Update',
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    },
+  })
+  window.once('ready-to-show', () => { window.show() })
+  return window
+}
+
+function setUpdateProgress(percent: number): void {
+  updateProgressWindow ??= createUpdateProgressWindow(updateProgressBlocking)
+  void updateProgressWindow.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(updateProgressHtml(percent))}`,
+  )
+}
+
+function showUpdateInstallProgress(): void {
+  updateProgressBlocking = true
+  setUpdateProgress(100)
+}
+
+function closeUpdateProgressWindow(): void {
+  updateProgressWindow?.close()
+  updateProgressWindow = undefined
+}
+
+async function runPresentedUpdateCheck(): Promise<OtaUpdateCheckResult> {
+  try {
+    return await otaUpdater.check()
+  } finally {
+    closeUpdateProgressWindow()
+  }
+}
+
+async function presentStartupUpdate(): Promise<void> {
+  try {
+    const result = await otaUpdater.check()
+    if (result.status !== 'ready') return
+    const response = await dialog.showMessageBox(
+      updateResultDialog(app.getName(), app.getVersion(), result),
+    )
+    if (response.response === 0) {
+      showUpdateInstallProgress()
+      await otaUpdater.install()
+    }
+  } finally {
+    closeUpdateProgressWindow()
+  }
+}
+
 function configureApplicationMenu(): void {
   const applicationName = app.getName()
   const currentVersion = app.getVersion()
   const controller = remoteAccess
   const menuOptions: ApplicationMenuOptions = {
     applicationName,
-    checkForUpdates: () => otaUpdater.check(),
+    checkForUpdates: runPresentedUpdateCheck,
     currentVersion,
-    installUpdate: () => otaUpdater.install(),
+    installCommandLine: () => Promise.resolve(installDshCommandLine(
+      process.execPath,
+      resolveDshBin(),
+      app.getPath('home'),
+    )),
+    installUpdate: () => {
+      showUpdateInstallProgress()
+      return otaUpdater.install()
+    },
     platform: process.platform,
     showMessageBox: options => dialog.showMessageBox(options),
   }
@@ -347,6 +457,9 @@ async function start(): Promise<void> {
   try {
     const defaultCwd = app.isPackaged ? app.getPath('home') : join(app.getAppPath(), '..', '..')
     if (process.env.DSH_ELECTRON_URL === undefined) {
+      backend = new WebBackend({
+        runtimeBinDir: ensureRuntimeBinaries(process.execPath, app.getPath('userData')),
+      })
       const store = new RemoteAccessConfigurationStore(
         join(app.getPath('userData'), 'remote-access.json'),
         remoteAccessSecretCodec(),
@@ -395,10 +508,13 @@ async function start(): Promise<void> {
           return current === undefined ? false : copyRemoteAccessUrl(nativeRemoteAccessOptions(current))
         },
         checkForUpdates: async () => {
-          await otaUpdater.check()
+          await runPresentedUpdateCheck()
           return desktopState()
         },
-        installUpdate: () => otaUpdater.install(),
+        installUpdate: () => {
+          showUpdateInstallProgress()
+          return otaUpdater.install()
+        },
         checkWebKernelUpdate: async () => {
           const commit = kernelInfo?.webKernelCommit
           if (commit === undefined || commit === '') {
@@ -416,7 +532,6 @@ async function start(): Promise<void> {
       remoteAccessStore = undefined
     }
     const window = createWindow()
-    void otaUpdater.check()
     if (remoteAccess !== undefined) {
       await synchronizeRendererAccessCookie(
         session.defaultSession.cookies,
@@ -426,6 +541,7 @@ async function start(): Promise<void> {
     }
     await window.loadURL(applicationUrl.href)
     configureApplicationMenu()
+    void presentStartupUpdate()
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     await dialog.showMessageBox({

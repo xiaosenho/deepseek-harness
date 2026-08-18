@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { ElectronDirectoryPickerBridge, type ElectronDirectoryPickerHandler } from './directory-picker-bridge.ts'
 import { linkWebKernelPlugins } from './web-kernel-plugins.ts'
 import { formatRemoteAccessUrl } from './remote-access.ts'
+import { ensureDesktopPath, prependRuntimePath } from './runtime.ts'
 import { LineBuffer, parseReadyUrls } from './readiness.ts'
 import { signalProcessTree, stopProcessTree } from './process-tree.ts'
 
@@ -15,7 +16,7 @@ const STARTUP_TIMEOUT_MS = 45_000
 const ERROR_DETAIL_LIMIT = 4_096
 
 /** Resolve the packaged dsh CLI without requiring a package main export. */
-function resolveDshBin(): string {
+export function resolveDshBin(): string {
   const require = createRequire(import.meta.url)
   return join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'lib', 'bin.js')
 }
@@ -114,6 +115,8 @@ interface WebBackendOptions {
   stopTree?: typeof stopProcessTree
   /** Profile plugin-link step overridden by lifecycle tests. */
   linkPlugins?: (home?: string) => void
+  /** Writable directory containing bundled node and pnpm shims. */
+  runtimeBinDir?: string
 }
 
 function stopDirectoryPicker(run: WebBackendRun): Promise<void> {
@@ -125,8 +128,12 @@ function backendEnvironment(
   remoteAccessToken: string | undefined,
   loopbackAccessToken: string | undefined,
   trustedAuthority: string | undefined,
+  runtimeBinDir: string | undefined,
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+  const env = prependRuntimePath(
+    ensureDesktopPath({ ...process.env, ELECTRON_RUN_AS_NODE: '1' }),
+    runtimeBinDir ?? '',
+  )
   delete env.DSH_ELECTRON_REMOTE_ACCESS_TOKEN
   delete env.DSH_ELECTRON_LOOPBACK_ACCESS_TOKEN
   delete env.DSH_ELECTRON_REMOTE_ACCESS_AUTHORITY
@@ -174,7 +181,12 @@ export class WebBackend {
     ;(this.options.linkPlugins ?? linkWebKernelPlugins)()
     const child = spawn(process.execPath, buildBackendArgs(process.platform, mode), {
       cwd,
-      env: backendEnvironment(remoteAccessToken, loopbackAccessToken, trustedAuthority),
+      env: backendEnvironment(
+        remoteAccessToken,
+        loopbackAccessToken,
+        trustedAuthority,
+        this.options.runtimeBinDir,
+      ),
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       detached: process.platform !== 'win32',
       windowsHide: true,

@@ -20,17 +20,25 @@ pnpm run dev:electron
 
 公网 FRP 访问使用外部 `frpc` 可执行文件。首次运行时，Electron 默认通过其继承的 `PATH` 解析 `frpc`；也可以用 `DSH_ELECTRON_FRPC_PATH` 指定命令名或绝对路径。保存远程访问偏好后，以设置中的可执行文件字段为准。LAN 访问不需要 `frpc`。
 
+## 打包运行时
+
+打包后的应用会在 `<userData>/runtime-bin` 下创建 `node` 与 `pnpm` shim，并把该目录放到后台 WebUI 进程的 `PATH` 最前面。两个 shim 都通过打包的 Electron 可执行文件以 Node 模式运行，因此插件子进程不依赖目标机器另行安装 Node.js 或 pnpm。在 macOS 上，壳还会加入系统中实际存在的常见用户工具目录，包括从 Finder 启动应用时通常不会继承的 Homebrew 路径。
+
+## dsh 命令行
+
+从原生应用菜单选择「Install dsh Command Line...」，可创建指向打包 CLI 的 `~/bin/dsh` shim。macOS 安装器会把 `$HOME/bin` 加入 `.zshrc` 和 `.bash_profile`；Linux 则更新 `.bashrc` 和 `.profile`。已有 PATH 行不会重复添加，再次运行安装器会刷新 shim。安装后请打开新的终端窗口。Windows 当前会明确报告不支持该操作，不会修改用户 PATH。
+
 ## 自动更新
 
 安装后的 macOS 应用会在首个窗口就绪后检查 `https://ota.xiaosenho.top/api/collections/app_releases/records`。查询会选择 `macos` 平台上 `version_code` 最大的记录；Electron 仍使用记录中的 SemVer `version` 判断它是否比已安装应用更新。源码运行绝不检查更新。在 Windows 与 Linux 分发路径强制实施经过认证的签名策略之前，这两个平台的打包版本同样会跳过 OTA。对于打包后的 macOS 应用，`DSH_ELECTRON_OTA_URL` 可替换 PocketBase 基础 URL；即使应用通过 `DSH_ELECTRON_URL` 使用外部 WebUI，该配置也生效，但它不会改变受信任的制品根地址。
 
-原生「关于 DeepSeek Harness」面板会显示已安装版本。可从原生应用菜单选择「Check for Updates...」按需执行同一更新操作；正在进行的启动检查与手动检查会共用一次操作，已经下载的更新也不会再次下载。Electron 管理的本地窗口还会在设置中显示版本、更新状态、发布说明、检查操作和已准备更新的安装操作，并在产品标识旁显示更新标记。这些 renderer 控件调用一个窄 preload bridge，发布选择、下载、进程关闭和安装仍由 Electron main 负责。外部 WebUI 不会获得这些控件。
+原生「关于 DeepSeek Harness」面板会显示已安装版本。可从原生应用菜单选择「Check for Updates...」按需执行同一更新操作；正在进行的启动检查与手动检查会共用一次操作，已经下载的更新也不会再次下载。启动检查发现新版本时会显示版本号与变更说明。可选更新使用非模态进度窗口，强制更新则使用模态进度窗口，直到有序重启开始。Electron 管理的本地窗口还会在设置中显示版本、更新状态、发布说明、检查操作和已准备更新的安装操作，并在产品标识旁显示更新标记。这些 renderer 控件调用一个窄 preload bridge，发布选择、下载、进程关闭和安装仍由 Electron main 负责。外部 WebUI 不会获得这些控件。
 
 PocketBase 负责选择发布，Electron Builder 元数据负责描述并校验下载。记录中不含凭据的 HTTPS `file_url` 必须位于固定的 `https://application-1305333896.cos.ap-guangzhou.myqcloud.com/` 制品根地址下，并指向 macOS DMG。其目录还必须包含匹配的 `latest-mac.yml`，以及该元数据中列出的所有文件。由于 PocketBase 已经选择精确发布，Electron Builder 会关闭自动预发布 channel 检测。元数据版本必须等于 PocketBase `version`，必须包含 `file_url` 指向的精确制品，并且必须为每个候选文件提供规范的 SHA-512 校验和；所有候选文件都必须保留在该 HTTPS 目录中。任一检查失败时，更新器都会在下载前拒绝该发布。
 
 创建或更新 `app_releases` 记录之前，先把完整的 Electron Builder 输出上传到制品目录。macOS 发布包括面向用户的 DMG、Squirrel.Mac 使用的 ZIP、`latest-mac.yml` 和生成的 blockmap。最后发布 PocketBase 记录，可防止客户端选择尚未完整上传的发布。
 
-更新检查绝不延迟窗口启动。网络、记录校验、元数据或下载失败只会写入日志，正在运行的应用保持不变。可选发布会在后台下载，并在应用下一次正常退出时安装；下一次启动会运行新版本。`is_force: true` 的记录则会在下载就绪后立即停止并等待当前 WebUI 进程树退出，然后运行安装程序并重新启动 Electron。该进程树停止期间，重复退出请求仍会被阻止；关闭失败时应用保持运行，也不会调用安装程序。
+更新检查绝不延迟窗口启动。网络、记录校验、元数据或下载失败只会写入日志，正在运行的应用保持不变。从只读卷（例如已挂载 DMG）启动的 macOS 应用会提示先移动到「应用程序」目录；未签名的 macOS 构建会提示 Squirrel.Mac 无法替换它。可选发布会在后台下载，并在应用下一次正常退出时安装；下一次启动会运行新版本。`is_force: true` 的记录则会在下载就绪后立即停止并等待当前 WebUI 进程树退出，然后运行安装程序并重新启动 Electron。该进程树停止期间，重复退出请求仍会被阻止；关闭失败时应用保持运行，也不会调用安装程序。
 
 ESM 主进程只在选中较新的 macOS 发布后加载 CommonJS `electron-updater` 包，并从该包的默认导出对象读取 `autoUpdater`。源码运行、不支持的平台以及没有较新发布的检查都不会加载更新器依赖。
 

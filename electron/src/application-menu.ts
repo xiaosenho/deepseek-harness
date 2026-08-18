@@ -7,10 +7,12 @@ import type {
   MessageBoxOptions,
   MessageBoxReturnValue,
 } from 'electron/main'
+import type { CliInstallOutcome } from './cli-installer.ts'
 import type { RemoteAccessState } from './remote-access-controller.ts'
 import type { OtaUpdateCheckResult } from './updater.ts'
 
 const CHECK_FOR_UPDATES_ID = 'check-for-updates'
+const INSTALL_DSH_ID = 'install-dsh'
 const REMOTE_ACCESS_STATUS_ID = 'remote-access-status'
 const REMOTE_ACCESS_START_ID = 'remote-access-start'
 const REMOTE_ACCESS_DETAILS_ID = 'remote-access-details'
@@ -55,13 +57,15 @@ export interface ApplicationMenuOptions {
   checkForUpdates: () => Promise<OtaUpdateCheckResult>
   /** Install a verified update already prepared by the controller. */
   installUpdate: () => Promise<boolean>
+  /** Install a user-level dsh command-line shim. */
+  installCommandLine: () => Promise<CliInstallOutcome>
   /** Native message-box presenter. */
   showMessageBox: ShowMessageBox
   /** Electron-owned remote access; absent for an external WebUI. */
   remoteAccess?: RemoteAccessMenuOptions
 }
 
-function resultDialog(
+export function updateResultDialog(
   applicationName: string,
   currentVersion: string,
   result: OtaUpdateCheckResult,
@@ -72,6 +76,20 @@ function resultDialog(
       return { ...base, type: 'info', message: 'Updates are available only in an installed application.' }
     case 'unsupported':
       return { ...base, type: 'info', message: 'Automatic updates are not available on this platform.' }
+    case 'readonly':
+      return {
+        ...base,
+        type: 'warning',
+        message: 'Automatic updates cannot run from a read-only volume.',
+        detail: 'Move DeepSeek Harness to the Applications folder, then check for updates again.',
+      }
+    case 'unsigned':
+      return {
+        ...base,
+        type: 'warning',
+        message: 'This macOS build is unsigned and cannot install automatic updates.',
+        detail: 'Install a signed and notarized release, or replace this build manually.',
+      }
     case 'no-release':
       return { ...base, type: 'info', message: 'No update is currently published.' }
     case 'current':
@@ -98,6 +116,17 @@ function resultDialog(
   }
 }
 
+/** Present one update result and return whether the ready update should install. */
+export async function runUpdateResultDialog(
+  options: ApplicationMenuOptions,
+  result: OtaUpdateCheckResult,
+): Promise<boolean> {
+  const response = await options.showMessageBox(
+    updateResultDialog(options.applicationName, options.currentVersion, result),
+  )
+  return result.status === 'ready' && response.response === 0
+}
+
 /**
  * Run a manual update check while keeping its native menu item single-flight.
  * @param item - clicked native menu item.
@@ -113,11 +142,43 @@ export async function runManualUpdateCheck(
   item.label = 'Checking for Updates...'
   try {
     const result = await options.checkForUpdates()
-    const dialog = await options.showMessageBox(resultDialog(options.applicationName, options.currentVersion, result))
-    if (result.status === 'ready' && dialog.response === 0) await options.installUpdate()
+    if (await runUpdateResultDialog(options, result)) await options.installUpdate()
   } finally {
     item.label = 'Check for Updates...'
     item.enabled = true
+  }
+}
+
+/** Run the user-level dsh shim installation while keeping the menu item single-flight. */
+export async function runInstallCommandLine(
+  item: Pick<MenuItem, 'enabled' | 'label'>,
+  options: ApplicationMenuOptions,
+): Promise<void> {
+  if (!item.enabled) return
+  item.enabled = false
+  item.label = 'Installing dsh Command Line...'
+  try {
+    const outcome = await options.installCommandLine()
+    await options.showMessageBox({
+      type: outcome.status === 'failed' ? 'error' : 'info',
+      title: options.applicationName,
+      message: outcome.message,
+    })
+  } finally {
+    item.label = 'Install dsh Command Line...'
+    item.enabled = true
+  }
+}
+
+function installDshItem(options: ApplicationMenuOptions): MenuItemConstructorOptions {
+  return {
+    id: INSTALL_DSH_ID,
+    label: 'Install dsh Command Line...',
+    click: (item) => {
+      void runInstallCommandLine(item, options).catch((error: unknown) => {
+        console.error('The native Electron dsh install command failed.', error)
+      })
+    },
   }
 }
 
@@ -222,6 +283,8 @@ export function createApplicationMenuTemplate(options: ApplicationMenuOptions): 
           { role: 'about' },
           { type: 'separator' },
           updateItem(options),
+          { type: 'separator' },
+          installDshItem(options),
           ...remote,
           { type: 'separator' },
           { role: 'services' },
@@ -246,6 +309,8 @@ export function createApplicationMenuTemplate(options: ApplicationMenuOptions): 
     {
       role: 'help',
       submenu: [
+        installDshItem(options),
+        { type: 'separator' },
         updateItem(options),
         ...remote,
         { type: 'separator' },

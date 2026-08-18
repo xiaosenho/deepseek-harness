@@ -47,6 +47,7 @@ function fakeUpdater(result = { isUpdateAvailable: true, updateInfo: updateInfo(
     disableDifferentialDownload: true,
     checkForUpdates: vi.fn().mockResolvedValue(result),
     downloadUpdate: vi.fn().mockResolvedValue(['/cache/update.zip']),
+    on: vi.fn(),
     once: vi.fn(),
     quitAndInstall: vi.fn(),
     removeListener: vi.fn(),
@@ -99,16 +100,26 @@ describe('Electron PocketBase OTA updater', () => {
     expect(updater.checkForUpdates).not.toHaveBeenCalled()
   })
 
-  it('validates metadata, downloads in the background, and installs optional updates on quit', async () => {
+  it('validates metadata, reports progress, and downloads optional updates in the background', async () => {
     const updater = fakeUpdater()
+    const onDownloadStart = vi.fn()
+    const onDownloadProgress = vi.fn()
 
-    await expect(startOtaUpdate(options({ updater })))
+    await expect(startOtaUpdate(options({ onDownloadProgress, onDownloadStart, updater })))
       .resolves.toEqual({
         status: 'ready',
         version: '0.2.0',
         changelog: 'Fixes and stability improvements',
       })
 
+    const [, progressListener] = updater.on.mock.calls.find(([event]) => event === 'download-progress') as [
+      'download-progress',
+      (progress: { percent: number }) => void,
+    ]
+    progressListener({ percent: 42.5 })
+    expect(onDownloadProgress).toHaveBeenCalledWith({ percent: 42.5 })
+    expect(updater.removeListener).toHaveBeenCalledWith('download-progress', progressListener)
+    expect(onDownloadStart).toHaveBeenCalledWith(false)
     expect(updater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: ARTIFACT_BASE_URL })
     expect(updater.allowDowngrade).toBe(false)
     expect(updater.autoDownload).toBe(false)
@@ -120,17 +131,19 @@ describe('Electron PocketBase OTA updater', () => {
 
   it('requests an orderly restart after a forced update finishes downloading', async () => {
     const updater = fakeUpdater()
+    const onDownloadStart = vi.fn()
     const onInstallError = vi.fn()
     const onForceUpdateReady = vi.fn(async (install: InstallDownloadedUpdate) => { install(onInstallError) })
     const fetch = vi.fn().mockResolvedValue(response([release({ is_force: true })]))
 
-    await expect(startOtaUpdate(options({ fetch, onForceUpdateReady, updater })))
+    await expect(startOtaUpdate(options({ fetch, onDownloadStart, onForceUpdateReady, updater })))
       .resolves.toEqual({
         status: 'ready',
         version: '0.2.0',
         changelog: 'Fixes and stability improvements',
       })
 
+    expect(onDownloadStart).toHaveBeenCalledWith(true)
     expect(onForceUpdateReady).toHaveBeenCalledOnce()
     expect(updater.once).toHaveBeenCalledWith('error', onInstallError)
     expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true)
@@ -178,6 +191,35 @@ describe('Electron PocketBase OTA updater', () => {
 
     expect(fetch).not.toHaveBeenCalled()
     expect(logger.warn).toHaveBeenCalledWith(`[OTA] Unsupported Electron platform: ${platform}`)
+  })
+
+  it('does not download when the app runs from a read-only volume', async () => {
+    const fetch = vi.fn()
+    const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+
+    await expect(startOtaUpdate(options({
+      applicationExecPath: '/Volumes/DeepSeek Harness/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',
+      fetch,
+      logger,
+    }))).resolves.toEqual({ status: 'readonly' })
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(logger.warn).toHaveBeenCalledWith('[OTA] Application runs from a read-only volume')
+  })
+
+  it('does not download when the macOS app is unsigned', async () => {
+    const fetch = vi.fn()
+    const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+
+    await expect(startOtaUpdate(options({
+      applicationExecPath: '/tmp/Unsigned.app/Contents/MacOS/Unsigned',
+      fetch,
+      logger,
+      platform: 'darwin',
+    }))).resolves.toEqual({ status: 'unsigned' })
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(logger.warn).toHaveBeenCalledWith('[OTA] macOS application is not signed; Squirrel.Mac cannot replace it')
   })
 
   it('contains HTTP, schema, and configured-origin failures without blocking startup', async () => {
