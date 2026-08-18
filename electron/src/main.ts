@@ -3,9 +3,10 @@
 import { join } from 'node:path'
 import { shell } from 'electron/common'
 import { app, BrowserWindow, dialog, Menu, net } from 'electron/main'
-import { createApplicationMenuTemplate } from './application-menu.ts'
+import { createApplicationMenuTemplate, updateResultDialog } from './application-menu.ts'
 import { resolveApplicationUrl } from './application-url.ts'
-import { WebBackend } from './backend.ts'
+import { resolveDshBin, WebBackend } from './backend.ts'
+import { installDshCommandLine } from './cli-installer.ts'
 import { ExitBarrier } from './exit-barrier.ts'
 import { createApplicationNavigationGuard, isExternalNavigation } from './navigation.ts'
 import { ensureRuntimeBinaries } from './runtime.ts'
@@ -13,6 +14,7 @@ import {
   installUpdateAfterShutdown,
   OtaUpdateController,
   type InstallDownloadedUpdate,
+  type OtaUpdateCheckResult,
 } from './updater.ts'
 
 app.setName('DeepSeek Harness')
@@ -22,6 +24,8 @@ let mainWindow: BrowserWindow | undefined
 let applicationUrl: URL | undefined
 let quitting = false
 let runtimeBinDir: string | undefined
+let updateProgressWindow: BrowserWindow | undefined
+let updateProgressBlocking = false
 const backend = new WebBackend()
 const exitBarrier = new ExitBarrier()
 const isCurrentApplicationNavigation = createApplicationNavigationGuard(() => applicationUrl)
@@ -29,9 +33,17 @@ const otaUpdater = new OtaUpdateController({
   ...(process.env.DSH_ELECTRON_OTA_URL === undefined
     ? {}
     : { baseUrl: process.env.DSH_ELECTRON_OTA_URL }),
+  applicationExecPath: process.execPath,
   currentVersion: app.getVersion(),
   fetch: (input, init) => net.fetch(input, init),
   isPackaged: app.isPackaged,
+  onDownloadStart: (force: boolean) => {
+    updateProgressBlocking = force
+    setUpdateProgress(0)
+  },
+  onDownloadProgress: (progress) => {
+    setUpdateProgress(progress.percent)
+  },
   onForceUpdateReady: restartForUpdate,
   platform: process.platform,
 })
@@ -42,6 +54,82 @@ function openExternal(target: string): void {
 
 function stopOwnedProcesses(): Promise<void> {
   return backend.stop()
+}
+
+function updateProgressHtml(percent: number): string {
+  const installing = updateProgressBlocking && percent >= 100
+  const title = installing ? '正在安装更新…' : updateProgressBlocking ? '正在下载并安装更新…' : '正在后台下载更新…'
+  const detail = installing
+    ? '更新包已就绪，应用即将重启。'
+    : updateProgressBlocking
+      ? '更新完成前主界面不可操作，请稍候。'
+      : '主界面可继续使用，下载完成后会提示你。'
+  const rounded = Math.max(0, Math.min(100, Math.round(percent)))
+  const progress = `<progress value="${rounded}" max="100" style="display:block;width:100%;height:14px;appearance:auto"></progress><p style="margin:10px 0 0;color:#888;text-align:right">${rounded}%</p>`
+  return `<!doctype html><meta charset="utf-8"><style>body{font:13px -apple-system,BlinkMacSystemFont,sans-serif;padding:18px;color:#333;background:#fff;margin:0}</style><p style="margin:0 0 8px"><strong>${title}</strong></p><p style="margin:0 0 8px;color:#888">${detail}</p>${progress}`
+}
+
+function createUpdateProgressWindow(blocking: boolean): BrowserWindow {
+  const window = new BrowserWindow({
+    width: 420,
+    height: 160,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    ...(mainWindow === undefined ? {} : { parent: mainWindow }),
+    modal: blocking,
+    title: blocking ? '正在更新' : '更新下载中',
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    },
+  })
+  window.once('ready-to-show', () => { window.show() })
+  return window
+}
+
+function setUpdateProgress(percent: number): void {
+  if (updateProgressWindow === undefined) {
+    updateProgressWindow = createUpdateProgressWindow(updateProgressBlocking)
+  }
+  void updateProgressWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(updateProgressHtml(percent))}`)
+}
+
+function showUpdateInstallProgress(): void {
+  updateProgressBlocking = true
+  setUpdateProgress(100)
+}
+
+function closeUpdateProgressWindow(): void {
+  updateProgressWindow?.close()
+  updateProgressWindow = undefined
+}
+
+async function runMenuUpdateCheck(): Promise<OtaUpdateCheckResult> {
+  try {
+    return await otaUpdater.check()
+  } finally {
+    closeUpdateProgressWindow()
+  }
+}
+
+async function presentStartupUpdate(): Promise<void> {
+  try {
+    const result = await otaUpdater.check()
+    if (result.status !== 'ready') return
+    const response = await dialog.showMessageBox(updateResultDialog(app.getName(), app.getVersion(), result))
+    if (response.response === 0) {
+      showUpdateInstallProgress()
+      await otaUpdater.install()
+    }
+  } finally {
+    closeUpdateProgressWindow()
+  }
 }
 
 function relaunchAfterInstallFailure(error: Error): void {
@@ -79,9 +167,17 @@ function configureApplicationMenu(): void {
   const currentVersion = app.getVersion()
   const menuOptions: Parameters<typeof createApplicationMenuTemplate>[0] = {
     applicationName,
-    checkForUpdates: () => otaUpdater.check(),
+    checkForUpdates: () => runMenuUpdateCheck(),
     currentVersion,
-    installUpdate: () => otaUpdater.install(),
+    installCommandLine: () => Promise.resolve(installDshCommandLine(
+      process.execPath,
+      resolveDshBin(),
+      app.getPath('home'),
+    )),
+    installUpdate: () => {
+      showUpdateInstallProgress()
+      return otaUpdater.install()
+    },
     platform: process.platform,
     showMessageBox: options => dialog.showMessageBox(options),
   }
@@ -157,7 +253,7 @@ async function start(): Promise<void> {
     const window = createWindow()
     await window.loadURL(applicationUrl.href)
     configureApplicationMenu()
-    void otaUpdater.check()
+    void presentStartupUpdate()
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     await dialog.showMessageBox({

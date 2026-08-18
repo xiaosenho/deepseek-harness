@@ -24,9 +24,17 @@ pnpm --filter @deepseek-ai/dsh-electron run dev
 
 `DSH_ELECTRON_CWD` selects the initial working directory. `DSH_ELECTRON_URL` can point the window at an already-running WebUI instead of starting one.
 
+## dsh command line
+
+The menu item `安装 dsh 命令行...` creates `~/bin/dsh` as a shim into the bundled dsh runtime and appends `export PATH="$HOME/bin:$PATH"` to `~/.zshrc` and `~/.bash_profile` exactly once. A later click reports that the shim is already installed. Open a new terminal window after installing.
+
 ## Updates
 
-The native menu keeps a Chinese `检查更新...` action. It queries the PocketBase `app_releases` collection for the newest record matching the host platform, then hands the verified generic feed directory to `electron-updater`.
+The native menu keeps a Chinese `检查更新...` action, and a startup check runs in the background after the window loads. When an optional release is found, the app shows the version and changelog in a Chinese dialog and lets the user choose `立即安装并重启` or `稍后`; the download runs in the background behind a small status window, so the main interface stays usable. Forced releases show a modal status window that blocks the main interface until the update finishes and the app restarts.
+
+When the app runs from a read-only volume such as a mounted DMG, automatic updates are disabled and the check explains that the app must be moved to the Applications folder first.
+
+The update check queries the PocketBase `app_releases` collection for the newest record matching the host platform, then hands the verified generic feed directory to `electron-updater`.
 
 The PocketBase release record must provide:
 
@@ -42,6 +50,8 @@ The platform feeds and artifacts are:
 - macOS: `latest-mac.yml` plus the ZIP it names; the `.zip.blockmap` is used for differential downloads when present, and the DMG is only the install artifact
 - Windows: `latest.yml` plus the NSIS `.exe` it names
 - Linux: `latest-linux.yml` plus the AppImage it names; the `deb` target is installed through the package manager and is not auto-updated
+
+The shell shows a native progress window with the download percent. When the user chooses to install, a second progress window remains visible while Electron stops the background WebUI process and relaunches into the installer. macOS auto-update requires a Developer ID signed and notarized build installed in `/Applications`; unsigned local builds are detected and reported as unsigned instead of starting an update that Squirrel.Mac cannot apply.
 
 Set `DSH_ELECTRON_OTA_URL` to override the PocketBase origin for testing.
 

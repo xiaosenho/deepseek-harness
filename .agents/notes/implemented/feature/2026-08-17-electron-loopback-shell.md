@@ -10,13 +10,13 @@ A desktop delivery needs a native window without forking the Web server, API, se
 
 ## Decision
 
-The Electron main process starts the packaged `dsh web --host 127.0.0.1 --port 0` command, waits for its strict loopback readiness line, and loads that URL in a hardened `BrowserWindow`. Electron owns only the shell: single-instance coordination, external-link navigation through the system browser, native menus, and complete process-tree teardown before quit.
+The Electron main process starts the packaged `dsh web --host 127.0.0.1 --port 0` command, waits for its strict loopback readiness line, and loads that URL in a hardened `BrowserWindow`. Electron owns only the shell: single-instance coordination, external-link navigation through the system browser, native menus, a one-click user-level `dsh` shim installer, and complete process-tree teardown before quit.
 
 A generated `runtime-bin` directory holds `node` and `pnpm` shims that execute the packaged Electron binary in Node mode. The shim directory is prepended to `PATH` for the background WebUI process, so plugin subprocesses inherit working commands without a separate installation. On macOS the shell also prepends existing user tool directories such as `/opt/homebrew/bin`, because Finder-launched processes do not inherit a login shell `PATH`. Electron 43 embeds Node v24.18.1, which satisfies the repository engine range.
 
 electron-builder copies the selected workspace packages plus their external dependency closure into `app/node_modules`. Conflicting dependency versions are nested under the workspace package that requires them; unique versions are placed once at the top level.
 
-The native menu keeps a Chinese update action. The updater selects the newest PocketBase `app_releases` record for the host platform, validates its trusted HTTPS artifact URL, then feeds the matching generic release directory to `electron-updater`. The artifact suffix is platform-specific: ZIP for macOS, NSIS `.exe` for Windows, and AppImage for Linux.
+The native menu keeps a Chinese update action, and a background startup check prompts the user with the version and changelog before installing. Optional downloads run behind a small status window with percent progress without blocking the main interface; forced downloads show a modal status window with percent progress that blocks the interface until the update completes and the app restarts. The updater selects the newest PocketBase `app_releases` record for the host platform, validates its trusted HTTPS artifact URL, then feeds the matching generic release directory to `electron-updater`. The artifact suffix is platform-specific: ZIP for macOS, NSIS `.exe` for Windows, and AppImage for Linux. Applications running from a read-only volume such as a mounted DMG report a disabled update with an install-to-Applications hint instead of attempting an installer write. Unsigned macOS builds are detected with `codesign` and reported as unsigned, because Squirrel.Mac cannot replace an unsigned application.
 
 ## Alternatives considered
 

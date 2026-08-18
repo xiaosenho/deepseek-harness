@@ -1,5 +1,8 @@
 /** PocketBase release selection and verified Electron update orchestration. */
 
+import { spawnSync } from 'node:child_process'
+import { dirname } from 'node:path'
+
 const DEFAULT_OTA_BASE_URL = 'https://ota.xiaosenho.top/'
 const TRUSTED_ARTIFACT_ROOT_URL = new URL('https://application-1305333896.cos.ap-guangzhou.myqcloud.com/')
 const RELEASE_COLLECTION = 'app_releases'
@@ -37,6 +40,10 @@ interface UpdateCheckResult {
   updateInfo: UpdateInfo
 }
 
+interface UpdateDownloadProgress {
+  percent: number
+}
+
 interface ElectronUpdater {
   allowDowngrade: boolean
   autoDownload: boolean
@@ -44,8 +51,10 @@ interface ElectronUpdater {
   disableDifferentialDownload: boolean
   checkForUpdates(): Promise<UpdateCheckResult | null>
   downloadUpdate(): Promise<string[]>
+  on(event: 'download-progress', listener: (progress: UpdateDownloadProgress) => void): this
   once(event: 'error', listener: (error: Error) => void): this
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
+  removeListener(event: 'download-progress', listener: (progress: UpdateDownloadProgress) => void): this
   removeListener(event: 'error', listener: (error: Error) => void): this
   setFeedURL(options: { provider: 'generic'; url: string }): void
 }
@@ -70,6 +79,12 @@ export interface StartOtaUpdateOptions {
   baseUrl?: string
   /** HTTP implementation supplied by Electron main. */
   fetch?: ReleaseFetch
+  /** Executable path whose location decides whether the app can install updates. */
+  applicationExecPath?: string
+  /** Called when a verified release begins its background download with its forced flag. */
+  onDownloadStart?: (force: boolean) => void
+  /** Called repeatedly with the percent complete while the verified release downloads. */
+  onDownloadProgress?: (progress: UpdateDownloadProgress) => void
   /** Diagnostic sink; update failures never stop application startup. */
   logger?: UpdateLogger
   /** Updater override for deterministic tests. */
@@ -80,6 +95,8 @@ export interface StartOtaUpdateOptions {
 export type OtaUpdateCheckResult =
   | { status: 'disabled' }
   | { status: 'unsupported' }
+  | { status: 'unsigned' }
+  | { status: 'readonly' }
   | { status: 'no-release' }
   | { status: 'current' }
   | { status: 'ready'; version: string; changelog: string }
@@ -101,6 +118,16 @@ function parseBaseUrl(value: string): URL {
   url.search = ''
   if (!url.pathname.endsWith('/')) url.pathname = `${url.pathname}/`
   return url
+}
+
+function runningOnReadOnlyVolume(platform: NodeJS.Platform, execPath: string): boolean {
+  return platform === 'darwin' && execPath.startsWith('/Volumes/')
+}
+
+function isSignedMacApplication(execPath: string): boolean {
+  const bundlePath = dirname(dirname(execPath))
+  const result = spawnSync('codesign', ['--verify', '--deep', '--strict', bundlePath], { stdio: 'ignore' })
+  return result.status === 0
 }
 
 function mapPlatform(platform: NodeJS.Platform): OtaPlatform | undefined {
@@ -270,6 +297,14 @@ export async function startOtaUpdate(options: StartOtaUpdateOptions): Promise<Ot
   if (!options.isPackaged) return { status: 'disabled' }
   const logger = options.logger ?? console
   try {
+    if (options.applicationExecPath !== undefined && runningOnReadOnlyVolume(options.platform, options.applicationExecPath)) {
+      logger.warn('[OTA] Application runs from a read-only volume')
+      return { status: 'readonly' }
+    }
+    if (options.platform === 'darwin' && options.applicationExecPath !== undefined && !isSignedMacApplication(options.applicationExecPath)) {
+      logger.warn('[OTA] macOS application is not signed; Squirrel.Mac cannot replace it')
+      return { status: 'unsigned' }
+    }
     const platform = mapPlatform(options.platform)
     if (platform === undefined) {
       logger.warn(`[OTA] Unsupported Electron platform: ${options.platform}`)
@@ -301,7 +336,17 @@ export async function startOtaUpdate(options: StartOtaUpdateOptions): Promise<Ot
     }
     validateUpdateMetadata(release, result.updateInfo, artifactBaseUrl)
     logger.info(`[OTA] Downloading ${release.version}`)
-    await updater.downloadUpdate()
+    options.onDownloadStart?.(release.force)
+    const onDownloadProgress = options.onDownloadProgress
+    const progressListener = onDownloadProgress === undefined
+      ? undefined
+      : (progress: UpdateDownloadProgress) => { onDownloadProgress(progress) }
+    if (progressListener !== undefined) updater.on('download-progress', progressListener)
+    try {
+      await updater.downloadUpdate()
+    } finally {
+      if (progressListener !== undefined) updater.removeListener('download-progress', progressListener)
+    }
     logger.info(`[OTA] Version ${release.version} is ready to install`)
     if (release.force) {
       await options.onForceUpdateReady((onError) => {

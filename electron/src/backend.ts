@@ -11,7 +11,7 @@ const STARTUP_TIMEOUT_MS = 45_000
 const ERROR_DETAIL_LIMIT = 4_096
 
 /** Resolve the packaged dsh CLI without requiring a package main export. */
-function resolveDshBin(): string {
+export function resolveDshBin(): string {
   const require = createRequire(import.meta.url)
   return join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'lib', 'bin.js')
 }

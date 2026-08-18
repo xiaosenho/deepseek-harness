@@ -6,9 +6,11 @@ import type {
   MessageBoxOptions,
   MessageBoxReturnValue,
 } from 'electron/main'
+import type { CliInstallOutcome } from './cli-installer.ts'
 import type { OtaUpdateCheckResult } from './updater.ts'
 
 const CHECK_FOR_UPDATES_ID = 'check-for-updates'
+const INSTALL_DSH_ID = 'install-dsh'
 
 type ShowMessageBox = (options: MessageBoxOptions) => Promise<MessageBoxReturnValue>
 
@@ -28,11 +30,13 @@ export interface ApplicationMenuOptions {
   checkForUpdates: () => Promise<OtaUpdateCheckResult>
   /** Install a verified update already prepared by the controller. */
   installUpdate: () => Promise<boolean>
+  /** Install a user-level dsh command-line shim. */
+  installCommandLine: () => Promise<CliInstallOutcome>
   /** Native message-box presenter. */
   showMessageBox: ShowMessageBox
 }
 
-function resultDialog(
+export function updateResultDialog(
   applicationName: string,
   currentVersion: string,
   result: OtaUpdateCheckResult,
@@ -43,6 +47,20 @@ function resultDialog(
       return { ...base, type: 'info', message: '更新仅适用于已安装的应用。' }
     case 'unsupported':
       return { ...base, type: 'info', message: '当前平台暂不支持自动更新。' }
+    case 'readonly':
+      return {
+        ...base,
+        type: 'warning',
+        message: '当前应用运行在只读卷（如 DMG）上，无法自动更新。',
+        detail: '请将 DeepSeek Harness 拖入“应用程序”文件夹后再检查更新。',
+      }
+    case 'unsigned':
+      return {
+        ...base,
+        type: 'warning',
+        message: '当前应用未签名，无法通过 macOS 自动更新安装。',
+        detail: '请使用 Developer ID 签名并公证的正式构建，或手动下载更新包覆盖安装。',
+      }
     case 'no-release':
       return { ...base, type: 'info', message: '当前没有已发布的更新。' }
     case 'current':
@@ -70,6 +88,20 @@ function resultDialog(
 }
 
 /**
+ * Show the user-visible outcome and return whether the user chose to install.
+ * @param options - application identity and dialog presenter.
+ * @param result - outcome of one Electron-owned update check.
+ * @returns whether a ready update should be installed.
+ */
+export async function runUpdateResultDialog(
+  options: ApplicationMenuOptions,
+  result: OtaUpdateCheckResult,
+): Promise<boolean> {
+  const dialog = await options.showMessageBox(updateResultDialog(options.applicationName, options.currentVersion, result))
+  return result.status === 'ready' && dialog.response === 0
+}
+
+/**
  * Run a manual update check while keeping its native menu item single-flight.
  * @param item - clicked native menu item.
  * @param options - application identity, controller operation, and dialog presenter.
@@ -84,11 +116,48 @@ export async function runManualUpdateCheck(
   item.label = '正在检查更新...'
   try {
     const result = await options.checkForUpdates()
-    const dialog = await options.showMessageBox(resultDialog(options.applicationName, options.currentVersion, result))
-    if (result.status === 'ready' && dialog.response === 0) await options.installUpdate()
+    if (await runUpdateResultDialog(options, result)) await options.installUpdate()
   } finally {
     item.label = '检查更新...'
     item.enabled = true
+  }
+}
+
+/**
+ * Run the user-level dsh shim installation while keeping its menu item single-flight.
+ * @param item - clicked native menu item.
+ * @param options - application identity, installer operation, and dialog presenter.
+ * @returns after the result dialog closes.
+ */
+export async function runInstallCommandLine(
+  item: Pick<MenuItem, 'enabled' | 'label'>,
+  options: ApplicationMenuOptions,
+): Promise<void> {
+  if (item.enabled === false) return
+  item.enabled = false
+  item.label = '正在安装 dsh 命令行...'
+  try {
+    const outcome = await options.installCommandLine()
+    await options.showMessageBox({
+      type: outcome.status === 'failed' ? 'error' : 'info',
+      title: options.applicationName,
+      message: outcome.message,
+    })
+  } finally {
+    item.label = '安装 dsh 命令行...'
+    item.enabled = true
+  }
+}
+
+function installDshItem(options: ApplicationMenuOptions): MenuItemConstructorOptions {
+  return {
+    id: INSTALL_DSH_ID,
+    label: '安装 dsh 命令行...',
+    click: (item) => {
+      void runInstallCommandLine(item, options).catch((error: unknown) => {
+        console.error('The native Electron dsh install command failed.', error)
+      })
+    },
   }
 }
 
@@ -119,6 +188,8 @@ export function createApplicationMenuTemplate(options: ApplicationMenuOptions): 
           { type: 'separator' },
           updateItem(options),
           { type: 'separator' },
+          installDshItem(options),
+          { type: 'separator' },
           { label: '服务', role: 'services' },
           { type: 'separator' },
           { label: '隐藏', role: 'hide' },
@@ -142,6 +213,8 @@ export function createApplicationMenuTemplate(options: ApplicationMenuOptions): 
       label: '帮助',
       role: 'help',
       submenu: [
+        installDshItem(options),
+        { type: 'separator' },
         updateItem(options),
         { type: 'separator' },
         { label: `关于 ${options.applicationName}`, role: 'about' },
