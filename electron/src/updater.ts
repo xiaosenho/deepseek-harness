@@ -125,7 +125,8 @@ function runningOnReadOnlyVolume(platform: NodeJS.Platform, execPath: string): b
 }
 
 function isSignedMacApplication(execPath: string): boolean {
-  const bundlePath = dirname(dirname(execPath))
+  // execPath = <app>/Contents/MacOS/<binary>，需上升三级才是 .app 根目录
+  const bundlePath = dirname(dirname(dirname(execPath)))
   const result = spawnSync('codesign', ['--verify', '--deep', '--strict', bundlePath], { stdio: 'ignore' })
   return result.status === 0
 }

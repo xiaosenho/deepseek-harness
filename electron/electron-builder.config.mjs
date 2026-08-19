@@ -78,7 +78,13 @@ function resolveInstalledDependency(fromDir, name) {
   try {
     entry = require.resolve(name)
   } catch {
-    return undefined
+    try {
+      // Binary-only packages (no main/index.js, e.g. @vscode/ripgrep-darwin-arm64)
+      // fail bare resolution; package.json always resolves to their directory.
+      entry = require.resolve(`${name}/package.json`)
+    } catch {
+      return undefined
+    }
   }
   let dir = dirname(entry)
   for (;;) {
