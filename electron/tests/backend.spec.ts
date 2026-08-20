@@ -54,13 +54,14 @@ afterEach(() => {
 })
 
 describe('buildBackendArgs', () => {
-  it('runs dsh web on loopback with an OS-selected port', () => {
+  it('runs dsh web on loopback with an OS-selected port without opening the default browser', () => {
     expect(buildBackendArgs('dsh.js')).toEqual([
       '--expose-internals',
       'dsh.js',
       'web',
       '--host', '127.0.0.1',
       '--port', '0',
+      '--no-open',
     ])
   })
 })

@@ -28,6 +28,8 @@ export function buildBackendArgs(dshBin = resolveDshBin()): string[] {
     'web',
     '--host', '127.0.0.1',
     '--port', '0',
+    // Electron owns a self-drawn window; never hand off to the default browser.
+    '--no-open',
   ]
 }
 

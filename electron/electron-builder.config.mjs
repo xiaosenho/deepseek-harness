@@ -181,6 +181,11 @@ export default {
   mac: {
     category: 'public.app-category.developer-tools',
     icon: 'build/icon.icns',
+    extendInfo: {
+      // Squirrel.Mac 直接内容写入：原子替换整个 bundle（rename），
+      // 避免默认的逐文件移动（慢、会跳过被占用文件导致部分替换）。
+      SquirrelMacEnableDirectContentsWrite: true,
+    },
     target: [
       { target: 'dmg', arch: ['arm64'] },
       { target: 'zip', arch: ['arm64'] },

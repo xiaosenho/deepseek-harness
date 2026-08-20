@@ -1,6 +1,7 @@
 /** Electron main-process host for the existing dsh Web profile. */
 
-import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { dirname, join } from 'node:path'
 import { shell } from 'electron/common'
 import { app, BrowserWindow, dialog, Menu, net } from 'electron/main'
 import { createApplicationMenuTemplate, updateResultDialog } from './application-menu.ts'
@@ -144,7 +145,19 @@ async function restartForUpdate(install: InstallDownloadedUpdate): Promise<void>
   try {
     await installUpdateAfterShutdown(
       () => exitBarrier.prepare(stopOwnedProcesses),
-      () => { install(relaunchAfterInstallFailure) },
+      () => {
+        install(relaunchAfterInstallFailure)
+        // Squirrel.Mac 竞态：quitAndInstall 先启动 ShipIt 再异步退出 app，ShipIt 启动时主进程
+        // 仍在运行会中止安装（App Still Running Error）。延迟退出给 Squirrel 写安装请求的时间，
+        // 并在退出前终止 Electron Helper：app.exit(0) 不清理它们，ShipIt 检测到残留实例同样中止。
+        setTimeout(() => {
+          if (process.platform === 'darwin') {
+            const bundleRoot = dirname(dirname(dirname(process.execPath)))
+            spawnSync('pkill', ['-f', `${bundleRoot}/Contents/Frameworks/.*Helper`], { stdio: 'ignore' })
+          }
+          app.exit(0)
+        }, 300)
+      },
     )
   } catch (error) {
     if (exitBarrier.canExit) {
