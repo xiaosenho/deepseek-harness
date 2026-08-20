@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 
 const kernelDir = resolve(process.cwd(), 'deepseek-harness-web')
 
-function run(command: string, args: string[], cwd: string): string {
+function run(command, args, cwd) {
   return execFileSync(command, args, { cwd, encoding: 'utf8' }).trim()
 }
 
