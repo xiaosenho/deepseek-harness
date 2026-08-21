@@ -8,6 +8,11 @@ import { createApplicationMenuTemplate, updateResultDialog } from './application
 import { resolveApplicationUrl } from './application-url.ts'
 import { resolveDshBin, WebBackend } from './backend.ts'
 import { installDshCommandLine } from './cli-installer.ts'
+import {
+  DIRECTORY_PICKER_HELPER_ARGUMENT,
+  pickElectronDirectory,
+  runDirectoryPickerHelper,
+} from './directory-picker-helper.ts'
 import { ExitBarrier } from './exit-barrier.ts'
 import { createApplicationNavigationGuard, isExternalNavigation } from './navigation.ts'
 import { ensureRuntimeBinaries } from './runtime.ts'
@@ -29,6 +34,7 @@ let updateProgressWindow: BrowserWindow | undefined
 let updateProgressBlocking = false
 const backend = new WebBackend()
 const exitBarrier = new ExitBarrier()
+const directoryPickerHelper = process.argv.includes(DIRECTORY_PICKER_HELPER_ARGUMENT)
 const isCurrentApplicationNavigation = createApplicationNavigationGuard(() => applicationUrl)
 const otaUpdater = new OtaUpdateController({
   ...(process.env.DSH_ELECTRON_OTA_URL === undefined
@@ -257,6 +263,11 @@ async function start(): Promise<void> {
             detail: signal === null ? `退出码：${String(code)}` : `信号：${signal}`,
           }).finally(() => { app.quit() })
         },
+        signal => pickElectronDirectory(signal, {
+          execPath: process.execPath,
+          applicationPath: app.getAppPath(),
+          packaged: app.isPackaged,
+        }),
         runtimeBinDir,
       )
       applicationUrl = location.loopbackUrl
@@ -279,7 +290,22 @@ async function start(): Promise<void> {
   }
 }
 
-if (app.requestSingleInstanceLock() === false) {
+// Dialog-only helper entry: relaunching the executable with the private
+// helper argument opens exactly one native directory dialog and reports the
+// outcome on stdout, so the WebUI child never touches the OS chooser. It runs
+// before the single-instance lock, which the running main app already holds.
+if (directoryPickerHelper) {
+  app.disableHardwareAcceleration()
+  void app.whenReady()
+    .then(() => runDirectoryPickerHelper(async () => {
+      const result = await dialog.showOpenDialog({
+        title: 'Select Workspace Directory',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    }))
+    .then((code) => { app.exit(code) }, () => { app.exit(1) })
+} else if (app.requestSingleInstanceLock() === false) {
   app.quit()
 } else {
   app.on('second-instance', () => {

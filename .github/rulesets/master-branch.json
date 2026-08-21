@@ -1,0 +1,21 @@
+{
+  "name": "master: upstream-sync only",
+  "enforcement": "active",
+  "target": "branch",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/master"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "restrict_pushes",
+      "parameters": {
+        "allowed_actor_ids": []
+      }
+    },
+    { "type": "non_fast_forward" },
+    { "type": "deletion" }
+  ]
+}

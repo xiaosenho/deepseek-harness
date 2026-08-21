@@ -53,6 +53,42 @@ function styleInjectionModule(
 }
 
 /**
+ * CSS-Modules-inline plugin for browser bundles: a `.module.css` import
+ * becomes a virtual module injecting the compiled sheet at factory execution
+ * and exporting the hashed class map. Shared by the dynamic client bundles
+ * and the client-side presentation libraries those bundles inline — the
+ * picker flows ship their own sheet inside their artifact.
+ */
+export function clientCssModulesInlinePlugin(id: string) {
+  return {
+    name: 'dsh-css-modules-inline',
+    resolveId(source: string, importer: string | undefined) {
+      if (!source.endsWith('.module.css')) return null
+      const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
+      return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+    },
+    async load(this: { addWatchFile: (id: string) => void }, virtualId: string) {
+      if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
+      const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+      // The virtual id otherwise hides the physical stylesheet from Rolldown's watch graph.
+      this.addWatchFile(fileId)
+      const source = await readFile(fileId)
+      const { code, exports: cssExports } = transform({
+        filename: fileId,
+        code: source,
+        cssModules: { pattern: '[hash]_[local]' },
+        minify: true,
+      })
+      const classMap: Record<string, string> = {}
+      const exportEntries = Object.entries(cssExports ?? {})
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      for (const [local, exp] of exportEntries) classMap[local] = exp.name
+      return styleInjectionModule(id, fileId, code.toString(), classMap)
+    },
+  }
+}
+
+/**
  * Wire/type layers a client bundle may inline: browser-safe contracts
  * with no runtime identity to share (no Symbol/instanceof/singleton state).
  * Everything else under @deepseek-ai/* is either a module-table entry
@@ -70,6 +106,16 @@ const VENDORED_LIBRARY = /^@deepseek-ai\/(cosmokit|schemastery)(\/|$)/
 
 /** Generated descriptor/codec contribution with no shared runtime identity. */
 const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
+
+/**
+ * Inlined client-side presentation libraries shared by several client
+ * plugins. They carry no cross-plugin runtime identity to share — each
+ * consumer bundles its own copy deliberately (the directory-picker flows,
+ * inlined by the native, browse, and Electron picker clients).
+ */
+const INLINE_PRESENTATION_LIBRARIES = new Set([
+  '@deepseek-ai/dsh-client-directory-picker-flows',
+])
 
 /**
  * Workspace mode replaces an empty config array with the root defaults. A
@@ -181,6 +227,20 @@ export function isStaticLinkedConfig(configs: readonly UserConfig[]): boolean {
 export function clientLibrary(id: string, libEntry: readonly string[]): BuildFaceConfig {
   const lib = clientLibraryConfig(id, libEntry)
   return clientOnly([lib])
+}
+
+/**
+ * Mark a package's Client pass as statically linked without adopting the
+ * {@link staticLinked} artifact contracts. Presentation libraries inlined by
+ * dynamic plugin bundles (the directory-picker flows) keep their bare imports
+ * through tsdown's default dependency handling and carry their own
+ * stylesheets; the marker is what puts them on the static-assembly roster
+ * {@link isStaticLinkedConfig} reads, so gates treat them as static client
+ * inputs for consumers instead of dynamic relationships.
+ * @returns a no-op plugin whose name is the roster marker.
+ */
+export function staticLinkedRosterMarker(): Readonly<{ name: string }> {
+  return { name: STATIC_LINKED_PLUGIN }
 }
 
 /**
@@ -488,39 +548,14 @@ function clientConfig(id: string, entry: string): UserConfig {
         if (!source.startsWith('@deepseek-ai/')) return null
         if (isRequested(source)) return null // requested module-table row: external wins
         if (VENDORED_LIBRARY.test(source)) return null // vendored library: inline, no shared identity
-        if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null // wire contribution: inline is the point
+        if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source) || INLINE_PRESENTATION_LIBRARIES.has(source)) return null // inline-safe contribution: inline is the point
         throw new Error(
           `client bundle purity: "${source}" is not in the default client externals or ${id}'s dsh.client.external, an inline-safe wire layer, or a generated /remote contribution — `
           + 'cross-plugin value imports are forbidden; declare a non-default module request or collaborate through cordis services '
           + '(type-only imports are erased and never reach this gate)',
         )
       },
-    }, {
-      name: 'dsh-css-modules-inline',
-      resolveId(source: string, importer: string | undefined) {
-        if (!source.endsWith('.module.css')) return null
-        const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-        return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
-      },
-      async load(virtualId: string) {
-        if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-        const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
-        // The virtual id otherwise hides the physical stylesheet from Rolldown's watch graph.
-        this.addWatchFile(fileId)
-        const source = await readFile(fileId)
-        const { code, exports: cssExports } = transform({
-          filename: fileId,
-          code: source,
-          cssModules: { pattern: '[hash]_[local]' },
-          minify: true,
-        })
-        const classMap: Record<string, string> = {}
-        const exportEntries = Object.entries(cssExports ?? {})
-          .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-        for (const [local, exp] of exportEntries) classMap[local] = exp.name
-        return styleInjectionModule(id, fileId, code.toString(), classMap)
-      },
-    }, {
+    }, clientCssModulesInlinePlugin(id), {
       name: 'dsh-css-text-inline',
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith(`.css${INLINE_CSS_QUERY}`)) return null

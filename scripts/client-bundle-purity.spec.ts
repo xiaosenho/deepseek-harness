@@ -88,6 +88,12 @@ describe('client bundle purity gate', () => {
     expect(() => resolveId('@deepseek-ai/dsh-goal/remote/nested')).toThrow(/purity/)
   })
 
+  it('lets the inlined directory-picker flows presentation library inline without admitting subpaths', () => {
+    expect(resolveId('@deepseek-ai/dsh-client-directory-picker-flows')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-client-directory-picker-flows/client')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-client-directory-picker-flows/nested')).toThrow(/purity/)
+  })
+
   it('throws on any other @deepseek-ai leak', () => {
     expect(() => resolveId('@deepseek-ai/dsh-agent')).toThrow(/purity/)
     expect(() => resolveId('@deepseek-ai/dsh-client-web')).toThrow(/purity/)

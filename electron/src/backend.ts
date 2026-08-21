@@ -3,6 +3,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { ElectronDirectoryPickerBridge, type ElectronDirectoryPickerHandler } from './directory-picker-bridge.ts'
 import { ensureDesktopPath, prependRuntimePath } from './runtime.ts'
 import { LineBuffer, parseReadyUrls } from './readiness.ts'
 import { signalProcessTree, stopProcessTree } from './process-tree.ts'
@@ -16,6 +18,11 @@ export function resolveDshBin(): string {
   return join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'lib', 'bin.js')
 }
 
+/** Resolve the overlay swapping the auto picker for the Electron-owned native-plus-browse picker. */
+function resolveElectronDirectoryPickerOverlay(): string {
+  return fileURLToPath(new URL('../resources/electron-directory-picker.cordis.patch.yml', import.meta.url))
+}
+
 /**
  * Build the packaged CLI arguments for the Electron-owned WebUI.
  * @param dshBin - resolved packaged CLI entry.
@@ -26,6 +33,9 @@ export function buildBackendArgs(dshBin = resolveDshBin()): string[] {
     '--expose-internals',
     dshBin,
     'web',
+    // The Electron shell owns its native chooser plus the in-app browser; the
+    // overlay mounts that provider pair and disables the auto resolver.
+    '--patch', resolveElectronDirectoryPickerOverlay(),
     '--host', '127.0.0.1',
     '--port', '0',
     // Electron owns a self-drawn window; never hand off to the default browser.
@@ -41,6 +51,8 @@ export interface WebBackendLocation {
 
 interface WebBackendRun {
   child: ChildProcess
+  directoryPickerBridge: ElectronDirectoryPickerBridge
+  directoryPickerStop?: Promise<void>
   stopping: boolean
   stopTask?: Promise<void>
 }
@@ -48,6 +60,11 @@ interface WebBackendRun {
 interface WebBackendOptions {
   /** Complete process-tree cleanup overridden by lifecycle tests. */
   stopTree?: typeof stopProcessTree
+}
+
+function stopDirectoryPicker(run: WebBackendRun): Promise<void> {
+  run.directoryPickerStop ??= run.directoryPickerBridge.stop()
+  return run.directoryPickerStop
 }
 
 /** Owns the background WebUI command from readiness through shutdown. */
@@ -61,11 +78,14 @@ export class WebBackend {
    * Start the configured WebUI command and wait for its readiness line.
    * @param cwd - working directory used by the command and Harness tools.
    * @param onUnexpectedExit - called after cleanup succeeds or its failure is logged.
+   * @param pickDirectory - native directory dialog owned by the Electron main process.
+   * @param runtimeBinDir - directory whose runtime binaries the command should use.
    * @returns the loopback renderer URL.
    */
   async start(
     cwd: string,
     onUnexpectedExit: (code: number | null, signal: NodeJS.Signals | null) => void,
+    pickDirectory: ElectronDirectoryPickerHandler,
     runtimeBinDir?: string,
   ): Promise<WebBackendLocation> {
     if (this.run !== undefined) throw new Error('Electron WebUI command is already running')
@@ -73,7 +93,7 @@ export class WebBackend {
     const child = spawn(process.execPath, buildBackendArgs(), {
       cwd,
       env: prependRuntimePath(ensureDesktopPath({ ...process.env, ELECTRON_RUN_AS_NODE: '1' }), runtimeBinDir ?? ''),
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       detached: process.platform !== 'win32',
       windowsHide: true,
     })
@@ -83,7 +103,14 @@ export class WebBackend {
       signalProcessTree(child, 'SIGKILL')
       throw new Error('Electron WebUI command has no output pipes')
     }
-    const run: WebBackendRun = { child, stopping: false }
+    let directoryPickerBridge: ElectronDirectoryPickerBridge
+    try {
+      directoryPickerBridge = new ElectronDirectoryPickerBridge(child, pickDirectory)
+    } catch (error: unknown) {
+      signalProcessTree(child, 'SIGKILL')
+      throw error
+    }
+    const run: WebBackendRun = { child, directoryPickerBridge, stopping: false }
     this.run = run
 
     return await new Promise<WebBackendLocation>((resolve, reject) => {
@@ -167,6 +194,9 @@ export class WebBackend {
     if (run.stopTask !== undefined) return run.stopTask
     const stopTree = this.options.stopTree ?? stopProcessTree
     const task = (async () => {
+      // Abort every open dialog and detach the bridge before the child dies,
+      // so a late pick response can never settle after teardown began.
+      await stopDirectoryPicker(run)
       await stopTree(run.child, 'WebUI')
     })()
     run.stopTask = task

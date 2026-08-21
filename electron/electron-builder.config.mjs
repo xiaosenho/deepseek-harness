@@ -172,7 +172,7 @@ export default {
   detectUpdateChannel: false,
   npmRebuild: false,
   directories: { output: 'dist' },
-  files: ['lib/*.js', 'package.json'],
+  files: ['lib/*.js', 'package.json', 'resources/electron-directory-picker.cordis.patch.yml'],
   extraResources: workspaceRuntimeResources(),
   publish: {
     provider: 'generic',

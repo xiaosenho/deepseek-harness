@@ -1,7 +1,9 @@
 /** Behavior of the /api browser-trust fence (rebinding + cross-site defense). */
 
 import { describe, expect, it } from 'vitest'
-import { assertTrustedAuthority, isTrustedApiRequest } from '../src/api-request-trust.ts'
+import {
+  assertTrustedAuthority, isRemoteProxiedRequest, isTrustedApiRequest,
+} from '../src/api-request-trust.ts'
 
 function request(headers: Record<string, string | undefined>): { headers: Record<string, string | undefined> } {
   return { headers }
@@ -104,5 +106,14 @@ describe('isTrustedApiRequest', () => {
     expect(isTrustedApiRequest(request({ ...markers, host: 'bad host' }), [])).toBe(false)
     expect(isTrustedApiRequest(request({ ...markers, host: '127.0.0.999' }), [])).toBe(false)
     expect(isTrustedApiRequest(request({ ...markers, host: '128.0.0.1' }), [])).toBe(false)
+  })
+})
+
+describe('isRemoteProxiedRequest', () => {
+  it('recognizes the remote-access proxy stamp and ignores markerless requests', () => {
+    expect(isRemoteProxiedRequest(request({ 'x-dsh-remote-access-proxy': '1' }))).toBe(true)
+    expect(isRemoteProxiedRequest(request({ 'x-dsh-remote-access-proxy': '' }))).toBe(true)
+    expect(isRemoteProxiedRequest(request({ host: '127.0.0.1:3080' }))).toBe(false)
+    expect(isRemoteProxiedRequest(request({}))).toBe(false)
   })
 })

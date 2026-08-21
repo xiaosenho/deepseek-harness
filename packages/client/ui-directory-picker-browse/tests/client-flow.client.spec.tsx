@@ -7,8 +7,8 @@ import type { DirectoryListing } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
+import { BrowseDirectoryFlow } from '@deepseek-ai/dsh-client-directory-picker-flows'
 import { apply, inject } from '../src/client/index.ts'
-import { BrowseDirectoryFlow } from '../src/client/flow.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
 // The service reads its initial locale from the browser; these specs assert

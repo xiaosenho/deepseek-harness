@@ -54,11 +54,12 @@ afterEach(() => {
 })
 
 describe('buildBackendArgs', () => {
-  it('runs dsh web on loopback with an OS-selected port without opening the default browser', () => {
+  it('mounts the Electron picker overlay and runs dsh web on loopback with an OS-selected port without opening the default browser', () => {
     expect(buildBackendArgs('dsh.js')).toEqual([
       '--expose-internals',
       'dsh.js',
       'web',
+      '--patch', expect.stringContaining('electron-directory-picker.cordis.patch.yml'),
       '--host', '127.0.0.1',
       '--port', '0',
       '--no-open',
@@ -67,16 +68,17 @@ describe('buildBackendArgs', () => {
 })
 
 describe('WebBackend', () => {
-  it('starts loopback and returns the renderer URL', async () => {
+  it('starts loopback over an IPC channel and returns the renderer URL', async () => {
     const child = new FakeBackendChild()
     processMocks.children.push(asChild(child))
-    const started = new WebBackend().start('/work', () => {})
+    const started = new WebBackend().start('/work', () => {}, async () => null)
     child.stdout.write('dsh web: http://127.0.0.1:43127 (LAN: http://192.168.1.5:43127)\n')
 
     await expect(started).resolves.toEqual({
       loopbackUrl: new URL('http://127.0.0.1:43127/'),
     })
     expect(processMocks.calls[0]?.options.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(processMocks.calls[0]?.options.stdio).toEqual(['ignore', 'pipe', 'pipe', 'ipc'])
     finish(child)
   })
 
@@ -86,7 +88,7 @@ describe('WebBackend', () => {
     const treeCleanup = Promise.withResolvers<undefined>()
     const stopTree = vi.fn(async () => { await treeCleanup.promise })
     const backend = new WebBackend({ stopTree })
-    const started = backend.start('/work', () => {})
+    const started = backend.start('/work', () => {}, async () => null)
     child.stdout.write('dsh web: http://127.0.0.1:43127\n')
     await started
 
@@ -108,7 +110,7 @@ describe('WebBackend', () => {
     const stopTree = vi.fn(async () => {})
     const onUnexpectedExit = vi.fn()
     const backend = new WebBackend({ stopTree })
-    const started = backend.start('/work', onUnexpectedExit)
+    const started = backend.start('/work', onUnexpectedExit, async () => null)
     child.stdout.write('dsh web: http://127.0.0.1:43127\n')
     await started
 

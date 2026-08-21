@@ -12,6 +12,9 @@
       "path": "../../runtime-diagnostics/invariants"
     },
     {
+      "path": "../directory-picker-flows"
+    },
+    {
       "path": "../ui-slots"
     },
     {

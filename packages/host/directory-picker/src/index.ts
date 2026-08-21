@@ -87,6 +87,35 @@ export interface DirectoryPickerBrowseCapability {
 }
 
 /**
+ * Combined native and browse interaction for a desktop host that serves both
+ * its local renderer and remote web clients. Local consumers can open the OS
+ * chooser while remote consumers retain the in-app filesystem browser.
+ */
+export interface DirectoryPickerNativeBrowseCapability {
+  kind: 'native-browse'
+  /**
+   * Open the chooser and wait for the operator.
+   * @param signal - caller/connection lifetime; abort terminates the chooser.
+   * @returns the chosen absolute path, or null when the operator cancels.
+   */
+  pick(signal: AbortSignal): Promise<string | null>
+  /**
+   * List one directory level through the browse interaction.
+   * @param path - absolute directory to list; absent lists the home directory.
+   * @param signal - caller lifetime; abort stops the scan.
+   * @returns the level's listing with ancestry.
+   */
+  list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>
+  /**
+   * Create one child directory through the browse interaction.
+   * @param path - absolute existing parent directory.
+   * @param name - single non-blank path segment.
+   * @returns the created directory's absolute path.
+   */
+  createDirectory(path: string, name: string): Promise<string>
+}
+
+/**
  * Merge-extensible registry of interaction shapes keyed by capability kind: a
  * new backend declaration-merges its shape here (the entry's `kind` literal
  * must equal its key) instead of editing this package.
@@ -94,6 +123,7 @@ export interface DirectoryPickerBrowseCapability {
 export interface DirectoryPickerCapabilities {
   native: DirectoryPickerNativeCapability
   browse: DirectoryPickerBrowseCapability
+  'native-browse': DirectoryPickerNativeBrowseCapability
 }
 
 /** Union of interaction shapes a backend can provide, derived from the merge-extensible {@link DirectoryPickerCapabilities} map. */

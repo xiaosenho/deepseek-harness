@@ -1,0 +1,32 @@
+name: Sync master from upstream
+
+on:
+  schedule:
+    - cron: '0 * * * *' # hourly; adjust the cadence as needed
+  workflow_dispatch:
+
+permissions:
+  contents: write # needed to push the synced master
+
+env:
+  # Upstream repo to mirror into master. Override via repo variable
+  # Settings -> Secrets and variables -> Actions -> Variables -> UPSTREAM_REPO.
+  UPSTREAM_REPO: ${{ vars.UPSTREAM_REPO || 'deepseek-ai/deepseek-harness' }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Fast-forward master to upstream
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream master
+          git merge --ff-only upstream/master
+
+      - name: Push synced master
+        run: git push origin HEAD:master

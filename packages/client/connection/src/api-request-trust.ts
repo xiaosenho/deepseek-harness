@@ -21,6 +21,22 @@ interface ApiTrustRequest {
   headers: IncomingHttpHeaders | Headers
 }
 
+/**
+ * Header the remote-access plugin's authenticated proxy stamps on every
+ * request it forwards, so host-only controls can reject a proxied remote
+ * browser even though the proxy rewrites the upstream Host to loopback.
+ */
+export const REMOTE_PROXY_HEADER = 'x-dsh-remote-access-proxy'
+
+/**
+ * Whether a request was forwarded by the remote-access plugin's proxy.
+ * @param request - inbound request whose headers may carry the proxy stamp.
+ * @returns true when the stamp is present, regardless of its value.
+ */
+export function isRemoteProxiedRequest(request: ApiTrustRequest): boolean {
+  return header(request.headers, REMOTE_PROXY_HEADER) !== undefined
+}
+
 function header(headers: IncomingHttpHeaders | Headers, name: string): string | undefined {
   if (headers instanceof Headers) return headers.get(name) ?? undefined
   const value = headers[name]
