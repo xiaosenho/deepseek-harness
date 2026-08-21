@@ -14,6 +14,7 @@ import {
   runDirectoryPickerHelper,
 } from './directory-picker-helper.ts'
 import { ExitBarrier } from './exit-barrier.ts'
+import { reapOrphanedWebBackends } from './orphan-reaper.ts'
 import { createApplicationNavigationGuard, isExternalNavigation } from './navigation.ts'
 import { ensureRuntimeBinaries } from './runtime.ts'
 import {
@@ -249,6 +250,11 @@ function createWindow(): BrowserWindow {
 
 async function start(): Promise<void> {
   try {
+    // A previously killed main process cannot have stopped its detached
+    // backend; reap that orphan before spawning a new one (same backend
+    // binary, never unrelated dsh runs).
+    const reaped = reapOrphanedWebBackends({ backendBinary: resolveDshBin(), ownPid: process.pid })
+    if (reaped.length > 0) console.error(`已回收 ${reaped.length} 个残留 WebUI 后端进程: ${reaped.join(', ')}`)
     const defaultCwd = app.isPackaged ? app.getPath('home') : join(app.getAppPath(), '..', '..')
     runtimeBinDir = ensureRuntimeBinaries(process.execPath, app.getPath('userData'))
     if (process.env.DSH_ELECTRON_URL === undefined) {
